@@ -21,3 +21,17 @@ RUN bun install --frozen-lockfile
 # Copy all source code
 COPY packages/ ./packages/
 COPY apps/     ./apps/
+
+# Build-time variable for the web client API base URL.
+# Must be a full URL (the schema requires it). In the nginx setup the dashboard
+# is served at /, so this should be https://<your-domain>.
+ARG VITE_SERVER_URL=http://localhost
+ENV VITE_SERVER_URL=${VITE_SERVER_URL}
+ENV NODE_ENV=production
+
+RUN bun run build
+
+WORKDIR /app/apps/server
+EXPOSE 3000
+
+CMD ["bun", "run", "dist/index.mjs"]

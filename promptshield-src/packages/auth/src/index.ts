@@ -22,7 +22,9 @@ export function createAuth() {
       crossSubDomainCookies: { enabled: false },
       defaultCookieAttributes: {
         sameSite: "lax",
-        secure: env.NODE_ENV === "production",
+        // Secure cookies only when served over HTTPS. This lets the dashboard
+        // work on plain HTTP (e.g. local/Lima) without disabling NODE_ENV=production.
+        secure: env.BETTER_AUTH_URL.startsWith("https://"),
         httpOnly: true,
       },
     },

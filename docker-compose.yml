@@ -24,9 +24,12 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl:ro
       - certbot-www:/var/www/certbot:ro
     depends_on:
-      - promptshield-gateway
-      - dashboard
-      - web
+      promptshield-gateway:
+        condition: service_healthy
+      dashboard:
+        condition: service_healthy
+      web:
+        condition: service_started
     networks:
       - filter
 
@@ -43,11 +46,7 @@ services:
       PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL: ${PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL:-http://bifrost:8081/v1}
       PROMPTSHIELD_ENGINE_URL: ${PROMPTSHIELD_ENGINE_URL:-http://promptshield-engine:4321}
       PROMPTSHIELD_ENGINE_API_KEY: ${PROMPTSHIELD_ENGINE_API_KEY}
-      PROMPTSHIELD_ADMIN_TOKEN: ${PROMPTSHIELD_ADMIN_TOKEN}
       PROMPTSHIELD_POLICY_PATH: ${PROMPTSHIELD_POLICY_PATH:-/policy/policy.yaml}
-      PROMPTSHIELD_ALLOW_DEFAULT_POLICY: ${PROMPTSHIELD_ALLOW_DEFAULT_POLICY:-false}
-      PROMPTSHIELD_AUDIT_URL: http://dashboard:3000
-      AUDIT_INGEST_SECRET: ${AUDIT_INGEST_SECRET}
       PROMPTSHIELD_MODEL_ROUTES: ${PROMPTSHIELD_MODEL_ROUTES:-}
     volumes:
       - ./policy.yaml:/policy/policy.yaml:ro
@@ -58,16 +57,21 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 30s
     depends_on:
       promptshield-engine:
         condition: service_healthy
+      bifrost:
+        condition: service_started
     networks:
       - filter
 
   # ─── PromptShield Engine (PII Detection) ──────────────────
   promptshield-engine:
     build:
+      # NOTE: The upstream engine repository has no release tags yet. This build
+      # resolves the default branch (main), which is not reproducible. Pin to a
+      # commit hash (e.g. ...#<sha>) once you know a stable revision.
       context: https://github.com/promptshieldhq/promptshield-engine.git
       dockerfile: Dockerfile
       args:
@@ -83,7 +87,7 @@ services:
     ports:
       - "4321:4321"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4321/ready')"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:4321/ready')\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -91,21 +95,41 @@ services:
     networks:
       - filter
 
-  # ─── PromptShield Dashboard ───────────────────────────────
+  # ─── Database Migrations (one-shot) ───────────────────────
+  db-migrate:
+    build:
+      context: ./promptshield-src
+      dockerfile: ../Dockerfile.dashboard
+      args:
+        VITE_SERVER_URL: ${VITE_SERVER_URL:-http://${NGINX_HOST:-localhost}}
+    container_name: filter-ps-db-migrate
+    command: ["sh", "-c", "cd /app/packages/db && bunx drizzle-kit migrate"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/promptshield
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - filter
+    restart: "no"
+
+  # ─── PromptShield Dashboard API ───────────────────────────
   dashboard:
     build:
-      context: ../promptshield-src
-      dockerfile: ../version-bifrost/Dockerfile.dashboard
+      context: ./promptshield-src
+      dockerfile: ../Dockerfile.dashboard
+      args:
+        VITE_SERVER_URL: ${VITE_SERVER_URL:-http://${NGINX_HOST:-localhost}}
     container_name: filter-ps-dashboard
-    working_dir: /app
-    command: ["sh", "-c", "bun install && cd packages/db && bunx drizzle-kit push && cd ../.. && cd apps/server && bun run --hot src/index.ts"]
     restart: unless-stopped
     environment:
-      NODE_ENV: development
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/promptshield
-      BETTER_AUTH_URL: http://localhost
+      NODE_ENV: production
+      PORT: "3000"
+      HOST: "0.0.0.0"
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/promptshield
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://${NGINX_HOST:-localhost}}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
-      CORS_ORIGIN: http://localhost
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://${NGINX_HOST:-localhost}}
       ENGINE_URL: ${ENGINE_URL:-http://promptshield-engine:4321}
       ENGINE_API_KEY: ${ENGINE_API_KEY:-${PROMPTSHIELD_ENGINE_API_KEY}}
       GATEWAY_URL: http://promptshield-gateway:8080
@@ -114,35 +138,68 @@ services:
       AUDIT_INGEST_SECRET: ${AUDIT_INGEST_SECRET}
       CONFIG_ADMIN_EMAILS: ${CONFIG_ADMIN_EMAILS:-admin@admin.com}
     volumes:
-      - ./policy.yaml:/policy/policy.yaml:ro
+      - ./policy.yaml:/policy/policy.yaml
+      - ./gateway.env:/policy/gateway.env
     ports:
       - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
       promptshield-engine:
         condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
     networks:
       - filter
 
-  # ─── PromptShield Web UI (Vite Dev Server) ───────────────
+  # ─── PromptShield Dashboard Web UI ────────────────────────
+  # Serves the built TanStack Start app at /. API calls are routed by nginx
+  # to the dashboard server above.
   web:
     build:
-      context: ../promptshield-src
-      dockerfile: ../version-bifrost/Dockerfile.dashboard
+      context: ./promptshield-src
+      dockerfile: ../Dockerfile.dashboard
+      args:
+        VITE_SERVER_URL: ${VITE_SERVER_URL:-http://${NGINX_HOST:-localhost}}
     container_name: filter-ps-web
     working_dir: /app/apps/web
-    command: ["sh", "-c", "bunx vite dev --host 0.0.0.0 --port 8000"]
-    restart: unless-stopped
+    command: ["bun", "run", "serve", "--host", "0.0.0.0", "--port", "8000"]
     environment:
-      NODE_ENV: development
-      VITE_SERVER_URL: http://localhost
+      VITE_SERVER_URL: ${VITE_SERVER_URL:-http://${NGINX_HOST:-localhost}}
       SSR_SERVER_URL: http://dashboard:3000
     ports:
       - "8000:8000"
     depends_on:
       dashboard:
-        condition: service_started
+        condition: service_healthy
+    networks:
+      - filter
+
+  # ─── Audit Log Forwarder ──────────────────────────────────
+  # Gateway v1.0.0 emits audit events to stdout only. This sidecar tails the
+  # gateway container logs and POSTs them to the dashboard ingest endpoint.
+  log-fwd:
+    image: docker:27-cli
+    container_name: filter-ps-log-fwd
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./promptshield-src/scripts/log-fwd.sh:/log-fwd.sh:ro
+    environment:
+      AUDIT_INGEST_SECRET: ${AUDIT_INGEST_SECRET}
+      AUDIT_SERVER_URL: http://dashboard:3000
+      GATEWAY_LOG_SOURCE: ${GATEWAY_LOG_SOURCE:-docker}
+      GATEWAY_CONTAINER_NAME: ${GATEWAY_CONTAINER_NAME:-filter-ps-gateway}
+    command: ["sh", "/log-fwd.sh"]
+    depends_on:
+      dashboard:
+        condition: service_healthy
     networks:
       - filter
 
@@ -170,6 +227,9 @@ services:
     image: maximhq/bifrost:latest
     container_name: filter-bifrost
     restart: unless-stopped
+    # Run as root so the entrypoint can fix /app/data ownership and the app can
+    # write its sqlite database inside the named volume.
+    user: "0:0"
     dns:
       - 8.8.8.8
       - 8.8.4.4
@@ -180,7 +240,10 @@ services:
     ports:
       - "8081:8081"
     volumes:
-      - ./bifrost-data:/app/data
+      # Use a named volume to avoid host UID/GID permission issues (especially
+      # with rootless Docker / Lima). Pre-seed providers via Bifrost UI on :8081
+      # or by copying config.json into the volume after first start.
+      - bifrost_data:/app/data
     networks:
       - filter
 
