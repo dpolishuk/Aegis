@@ -26,6 +26,7 @@ services:
     depends_on:
       - promptshield-gateway
       - dashboard
+      - web
     networks:
       - filter
 
@@ -102,7 +103,7 @@ services:
     environment:
       NODE_ENV: development
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/promptshield
-      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_URL: http://localhost
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       CORS_ORIGIN: http://localhost
       ENGINE_URL: ${ENGINE_URL:-http://promptshield-engine:4321}
@@ -121,6 +122,27 @@ services:
         condition: service_healthy
       promptshield-engine:
         condition: service_healthy
+    networks:
+      - filter
+
+  # ─── PromptShield Web UI (Vite Dev Server) ───────────────
+  web:
+    build:
+      context: ../promptshield-src
+      dockerfile: ../version-bifrost/Dockerfile.dashboard
+    container_name: filter-ps-web
+    working_dir: /app/apps/web
+    command: ["sh", "-c", "bunx vite dev --host 0.0.0.0 --port 8000"]
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      VITE_SERVER_URL: http://localhost
+      SSR_SERVER_URL: http://dashboard:3000
+    ports:
+      - "8000:8000"
+    depends_on:
+      dashboard:
+        condition: service_started
     networks:
       - filter
 
