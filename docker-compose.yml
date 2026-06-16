@@ -1,0 +1,172 @@
+# Filter — PromptShield (PII) + Bifrost (AI Gateway)
+#
+# Architecture:
+#   Nginx → PromptShield Gateway → Bifrost → LLM Providers
+#              ↓
+#         PromptShield Engine (PII Detection)
+#              ↓
+#         Dashboard + Postgres
+#
+name: filter-bifrost
+
+services:
+
+  # ─── Nginx (Entry Point) ──────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: filter-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - certbot-www:/var/www/certbot:ro
+    depends_on:
+      - promptshield-gateway
+      - dashboard
+    networks:
+      - filter
+
+  # ─── PromptShield Gateway (PII Proxy) ─────────────────────
+  promptshield-gateway:
+    build:
+      context: https://github.com/promptshieldhq/promptshield-gateway.git#v1.0.0
+      dockerfile: Dockerfile
+    container_name: filter-ps-gateway
+    restart: unless-stopped
+    environment:
+      PROMPTSHIELD_PORT: "8080"
+      PROMPTSHIELD_PROVIDER: ${PROMPTSHIELD_PROVIDER:-openai-compatible}
+      PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL: ${PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL:-http://bifrost:8081/v1}
+      PROMPTSHIELD_ENGINE_URL: ${PROMPTSHIELD_ENGINE_URL:-http://promptshield-engine:4321}
+      PROMPTSHIELD_ENGINE_API_KEY: ${PROMPTSHIELD_ENGINE_API_KEY}
+      PROMPTSHIELD_ADMIN_TOKEN: ${PROMPTSHIELD_ADMIN_TOKEN}
+      PROMPTSHIELD_POLICY_PATH: ${PROMPTSHIELD_POLICY_PATH:-/policy/policy.yaml}
+      PROMPTSHIELD_ALLOW_DEFAULT_POLICY: ${PROMPTSHIELD_ALLOW_DEFAULT_POLICY:-false}
+      PROMPTSHIELD_AUDIT_URL: http://dashboard:3000
+      AUDIT_INGEST_SECRET: ${AUDIT_INGEST_SECRET}
+      PROMPTSHIELD_MODEL_ROUTES: ${PROMPTSHIELD_MODEL_ROUTES:-}
+    volumes:
+      - ./policy.yaml:/policy/policy.yaml:ro
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      promptshield-engine:
+        condition: service_healthy
+    networks:
+      - filter
+
+  # ─── PromptShield Engine (PII Detection) ──────────────────
+  promptshield-engine:
+    build:
+      context: https://github.com/promptshieldhq/promptshield-engine.git
+      dockerfile: Dockerfile
+      args:
+        SPACY_PROFILE: ${SPACY_PROFILE:-minimal}
+    container_name: filter-ps-engine
+    restart: unless-stopped
+    environment:
+      PROMPTSHIELD_ENGINE_PORT: "4321"
+      PROMPTSHIELD_ENGINE_HOST: "0.0.0.0"
+      PROMPTSHIELD_API_KEY: ${PROMPTSHIELD_ENGINE_API_KEY}
+      PROMPTSHIELD_ALLOW_UNAUTH: "false"
+      PROMPTSHIELD_LOG_LEVEL: ${PROMPTSHIELD_LOG_LEVEL:-INFO}
+    ports:
+      - "4321:4321"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4321/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    networks:
+      - filter
+
+  # ─── PromptShield Dashboard ───────────────────────────────
+  dashboard:
+    build:
+      context: ../promptshield-src
+      dockerfile: ../version-bifrost/Dockerfile.dashboard
+    container_name: filter-ps-dashboard
+    working_dir: /app
+    command: ["sh", "-c", "bun install && cd packages/db && bunx drizzle-kit push && cd ../.. && cd apps/server && bun run --hot src/index.ts"]
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/promptshield
+      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      CORS_ORIGIN: http://localhost
+      ENGINE_URL: ${ENGINE_URL:-http://promptshield-engine:4321}
+      ENGINE_API_KEY: ${ENGINE_API_KEY:-${PROMPTSHIELD_ENGINE_API_KEY}}
+      GATEWAY_URL: http://promptshield-gateway:8080
+      POLICY_FILE_PATH: /policy/policy.yaml
+      GATEWAY_ENV_PATH: /policy/gateway.env
+      AUDIT_INGEST_SECRET: ${AUDIT_INGEST_SECRET}
+      CONFIG_ADMIN_EMAILS: ${CONFIG_ADMIN_EMAILS:-admin@admin.com}
+    volumes:
+      - ./policy.yaml:/policy/policy.yaml:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      promptshield-engine:
+        condition: service_healthy
+    networks:
+      - filter
+
+  # ─── Postgres ─────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: filter-ps-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: promptshield
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - filter
+
+  # ─── Bifrost (AI Gateway / Router) ────────────────────────
+  bifrost:
+    image: maximhq/bifrost:latest
+    container_name: filter-bifrost
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    environment:
+      APP_PORT: "8081"
+      APP_HOST: "0.0.0.0"
+      LOG_LEVEL: ${BIFROST_LOG_LEVEL:-info}
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./bifrost-data:/app/data
+    networks:
+      - filter
+
+volumes:
+  postgres_data:
+  bifrost_data:
+  certbot-www:
+
+networks:
+  filter:
+    driver: bridge

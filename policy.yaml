@@ -1,0 +1,27 @@
+# PromptShield PII Policy
+# Docs: https://github.com/promptshieldhq/promptshield-gateway
+
+pii_min_score: 0.70
+
+pii:
+  CREDIT_CARD: mask
+  US_SSN: mask
+  EMAIL_ADDRESS: mask
+  PHONE_NUMBER: mask
+  IBAN_CODE: mask
+  IP_ADDRESS: mask
+  PERSON: mask
+  LOCATION: mask
+  MEDICAL_LICENSE: mask
+  US_PASSPORT: mask
+  US_DRIVER_LICENSE: mask
+
+injection:
+  action: block
+
+on_detector_error: fail_closed
+
+rate_limit:
+  enabled: true
+  requests_per_minute: 60
+  burst: 10

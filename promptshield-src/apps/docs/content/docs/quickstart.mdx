@@ -1,0 +1,181 @@
+---
+title: Quickstart
+description: "Run the full PromptShield stack locally: gateway, detection engine, and dashboard."
+---
+
+By the end of this guide, all three components will be running, traffic will flow through the gateway, and detection will block a leaked API key.
+
+Each component lives in its own repo. The main repo (`promptshield`) creates the shared Docker network that the gateway and engine join.
+
+## 1. Clone all three repos
+
+```bash
+git clone https://github.com/promptshieldhq/promptshield
+git clone https://github.com/promptshieldhq/promptshield-gateway
+git clone https://github.com/promptshieldhq/promptshield-engine
+```
+
+## 2. Start the dashboard stack
+
+This creates the shared `promptshield` Docker network and policy volume that the other two services join.
+
+```bash
+cd promptshield
+
+cp .env.local.example .env.local
+# Required: BETTER_AUTH_SECRET (any 32+ char string)
+# Required: your LLM provider API key
+
+docker compose -f docker-compose.dev.yml up --build
+```
+
+| Service    | URL                   |
+| ---------- | --------------------- |
+| Dashboard  | http://localhost:8000 |
+| API server | http://localhost:3000 |
+| Docs       | http://localhost:4000 |
+
+## 3. Start the detection engine
+
+Open a new terminal:
+
+```bash
+cd promptshield-engine
+
+cp .env.local.example .env.local
+# Set PROMPTSHIELD_API_KEY — must match ENGINE_API_KEY in the dashboard .env.local
+
+docker compose -f docker-compose.dev.yml up --build
+```
+
+Verify:
+
+```bash
+curl -s http://localhost:4321/health
+# {"status":"ok"}
+```
+
+## 4. Start the gateway
+
+Open a new terminal:
+
+```bash
+cd promptshield-gateway
+
+cp .env.example .env.local
+# Required: PROMPTSHIELD_PROVIDER (gemini | openai | anthropic | selfhosted)
+# Required: your provider API key (e.g. GEMINI_API_KEY)
+# Required: PROMPTSHIELD_ENGINE_URL=http://localhost:4321
+# Required: PROMPTSHIELD_ENGINE_API_KEY — must match the engine's PROMPTSHIELD_API_KEY
+
+docker compose -f docker-compose.dev.yml up --build
+```
+
+Verify:
+
+```bash
+curl -s http://localhost:8080/health
+# {"status":"ok","service":"promptshield-gateway"}
+```
+
+All three components are now running. Gateway and engine are on the shared `promptshield` Docker network, and the dashboard can reach both.
+
+## Plain on-prem setup (no Docker)
+
+If you are deploying on hosts/VMs without Docker, run each component directly:
+
+1. Engine: follow [Engine](/docs/engine) and run with `uv run uvicorn main:app --host 0.0.0.0 --port 4321`
+2. Gateway: run with your normal process manager and set:
+
+```bash
+PROMPTSHIELD_ENGINE_URL=http://<engine-host>:4321
+PROMPTSHIELD_ENGINE_API_KEY=<engine-api-key>
+PROMPTSHIELD_AUDIT_URL=http://<dashboard-host>:3000
+AUDIT_INGEST_SECRET=<shared-secret>
+```
+
+3. Dashboard: follow [Dashboard](/docs/dashboard) plain setup and set:
+
+```bash
+ENGINE_URL=http://<engine-host>:4321
+ENGINE_API_KEY=<engine-api-key>
+GATEWAY_URL=http://<gateway-host>:8080
+GATEWAY_ADMIN_TOKEN=<gateway-admin-token>
+```
+
+Use the same engine key value for `PROMPTSHIELD_API_KEY` (engine), `PROMPTSHIELD_ENGINE_API_KEY` (gateway), and `ENGINE_API_KEY` (dashboard).
+
+## 5. Send a request
+
+Point your app at `http://localhost:8080/v1`. The API is OpenAI-compatible, so existing client code usually does not need changes.
+
+```bash
+curl -s -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gemini-2.0-flash", "messages": [{"role": "user", "content": "Say hello"}]}'
+```
+
+## 6. Test detection
+
+Send a prompt containing a leaked API key:
+
+```bash
+curl -s -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gemini-2.0-flash",
+    "messages": [{
+      "role": "user",
+      "content": "Why is my app broken?\n\nOPENAI_API_KEY=sk-proj-abc123\nDB_URL=postgres://admin:pass@prod.db/app"
+    }]
+  }'
+# {"error": "request blocked: secret detected in prompt"}
+```
+
+The LLM was not called. See [Secrets Detection](/docs/secrets) for the full list of detected types.
+
+---
+
+## Gateway only (no dashboard or engine)
+
+If you only need gateway controls (rate limiting, token budgets, audit logging) without engine or dashboard:
+
+```bash
+cd promptshield-gateway
+
+cp .env.example .env
+# PROMPTSHIELD_PROVIDER=gemini
+# GEMINI_API_KEY=your-key
+
+make run
+# listening on :8080
+```
+
+Or with Docker:
+
+```bash
+cp .env.example .env.local
+docker compose -f docker-compose.dev.yml up --build
+```
+
+Set `PROMPTSHIELD_ENGINE_URL=none` (or leave it unset) to run in gateway-only mode.
+
+---
+
+## Services reference
+
+| Service          | Address         | Notes                                    |
+| ---------------- | --------------- | ---------------------------------------- |
+| Gateway          | `:8080`         | LLM traffic, policy enforcement          |
+| Metrics          | `:8080/metrics` | Prometheus, always on                    |
+| Detection engine | `:4321`         | PII and injection scanning               |
+| API server       | `:3000`         | Dashboard backend                        |
+| Dashboard        | `:8000`         | Policy editor, audit log, key management |
+| Docs             | `:4000`         | This documentation                       |
+
+## Next steps
+
+- [Providers](/docs/providers) — configure Gemini, OpenAI, Anthropic, Ollama
+- [Policy](/docs/policy) — block, mask, or allow by entity type
+- [SDK integration](/docs/sdk) — point `base_url` at the gateway
+- [Grafana](/docs/grafana) — full observability stack in one command
