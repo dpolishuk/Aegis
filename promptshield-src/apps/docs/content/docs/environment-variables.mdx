@@ -105,7 +105,8 @@ Set both or neither. Setting one without the other is a startup error.
 | `CORS_ORIGIN` | `http://localhost:8000` | Yes | Allowed CORS origin (the web app URL) |
 | `ENGINE_URL` | `http://localhost:4321` | No | Detection engine base URL |
 | `ENGINE_API_KEY` | — | No* | Bearer token for engine requests. *Required when `PROMPTSHIELD_ALLOW_UNAUTH=false` on the engine (the default). Must match `PROMPTSHIELD_API_KEY` in the engine. |
-| `GATEWAY_URL` | `http://promptshield-gateway:8080` | No | Internal gateway base URL for dashboard health checks and admin calls |
+| `GATEWAY_URL` | `http://localhost:8080` | No | Gateway base URL for dashboard health checks and admin calls. Compose overrides this to the internal gateway address. |
+| `BIFROST_URL` | `http://bifrost:8081` | No | Bifrost router base URL for dashboard status checks |
 | `GATEWAY_ADMIN_TOKEN` | — | No | Token for gateway admin API calls. Must match `PROMPTSHIELD_ADMIN_TOKEN` on the gateway. |
 | `GATEWAY_CONFIG_SOURCE` | `local_env` | No | `local_env` reads from `GATEWAY_ENV_PATH`; `gateway_api` calls the gateway admin API |
 | `GATEWAY_CONFIG_ENDPOINT` | `/admin/config` | No | Gateway admin config endpoint path |
@@ -147,6 +148,7 @@ When running with docker-compose, the following variables are set automatically 
 | `ENGINE_URL` | `http://promptshield-engine:4321` | Container-network address |
 | `ENGINE_API_KEY` | `${ENGINE_API_KEY:?set in .env.local}` | Required. Compose fails fast if missing. Must match engine `PROMPTSHIELD_API_KEY`. |
 | `GATEWAY_URL` | `http://promptshield-gateway:8080` | Container-network address |
+| `BIFROST_URL` | `http://bifrost:8081` | Container-network router status address |
 | `VITE_SERVER_URL` | `http://localhost:3000` | Browser-facing; stays as localhost |
 | `AUDIT_SERVER_URL` | `http://ps-server:3000` | Docker-network dashboard address for the log-fwd sidecar |
 | `GATEWAY_LOG_SOURCE` | `docker` | Docker mode tails the gateway container logs |

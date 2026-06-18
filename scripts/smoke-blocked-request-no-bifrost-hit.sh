@@ -15,15 +15,17 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-tmp_dir="$(mktemp -d "$ROOT_DIR/.tmp-blocked-smoke.XXXXXX")"
+tmp_parent="${TMPDIR:-/tmp}"
+tmp_dir="$(mktemp -d "$tmp_parent/aegis-blocked-smoke.XXXXXX")"
 project_name="aegis-blocked-smoke-${RANDOM}"
-counter_file="$tmp_dir/upstream_hits"
 compose_file="$tmp_dir/compose.yml"
-policy_file="$tmp_dir/policy.yaml"
 host_port="$((18080 + RANDOM % 10000))"
-touch "$counter_file"
 
 cleanup() {
+  local status=$?
+  if [[ "$status" -ne 0 ]]; then
+    docker compose -p "$project_name" -f "$compose_file" logs promptshield-gateway >&2 || true
+  fi
   docker compose -p "$project_name" -f "$compose_file" down -v >/dev/null 2>&1 || true
   rm -rf "$tmp_dir"
 }
@@ -31,11 +33,10 @@ trap cleanup EXIT
 
 cat >"$tmp_dir/fake-bifrost.py" <<'PY'
 import json
-import os
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-counter_file = os.environ["UPSTREAM_HITS"]
+hits = []
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
@@ -49,15 +50,29 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _text(self, status, payload):
+        body = str(payload).encode()
+        self.send_response(status)
+        self.send_header("content-type", "text/plain")
+        self.send_header("content-length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         if self.path == "/health":
             self._json(200, {"status": "ok", "service": "fake-bifrost"})
             return
+        if self.path == "/hits":
+            self._text(200, len(hits))
+            return
+        if self.path == "/reset":
+            hits.clear()
+            self._text(200, "ok")
+            return
         self._json(404, {"error": "not found"})
 
     def do_POST(self):
-        with open(counter_file, "a", encoding="utf-8") as f:
-            f.write(f"{datetime.now(timezone.utc).isoformat()} {self.command} {self.path}\n")
+        hits.append(f"{datetime.now(timezone.utc).isoformat()} {self.command} {self.path}")
         self._json(200, {
             "id": "fake",
             "object": "chat.completion",
@@ -157,10 +172,6 @@ FROM python:3.12-alpine
 COPY fake-*.py /
 DOCKER
 
-sed \
-  -e 's/EMAIL_ADDRESS: mask/EMAIL_ADDRESS: block/' \
-  "$ROOT_DIR/policy.yaml" >"$policy_file"
-
 cat >"$compose_file" <<YAML
 name: "$project_name"
 
@@ -190,9 +201,14 @@ services:
       PROMPTSHIELD_PROVIDER: openai-compatible
       PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL: http://bifrost:8081/v1
       PROMPTSHIELD_ENGINE_URL: http://promptshield-engine:4321
-      PROMPTSHIELD_POLICY_PATH: /policy/policy.yaml
+      PROMPTSHIELD_POLICY_PATH: /tmp/policy.yaml
     volumes:
-      - "$policy_file:/policy/policy.yaml:ro"
+      - "$ROOT_DIR/policy.yaml:/base-policy/policy.yaml:ro"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sed 's/EMAIL_ADDRESS: mask/EMAIL_ADDRESS: block/' /base-policy/policy.yaml > /tmp/policy.yaml
+        exec /app/promptshield
     expose:
       - "8080"
     depends_on:
@@ -235,10 +251,6 @@ services:
       dockerfile: Dockerfile.fake-python
     image: "${project_name}-fake-bifrost"
     command: ["python", "/fake-bifrost.py"]
-    environment:
-      UPSTREAM_HITS: /hits/upstream_hits
-    volumes:
-      - "$tmp_dir:/hits"
     expose:
       - "8081"
     networks:
@@ -278,6 +290,16 @@ YAML
 
 docker compose -p "$project_name" -f "$compose_file" up -d --build nginx
 
+bifrost_hits() {
+  docker compose -p "$project_name" -f "$compose_file" exec -T bifrost \
+    python -c 'import urllib.request; print(urllib.request.urlopen("http://localhost:8081/hits").read().decode().strip())'
+}
+
+reset_bifrost_hits() {
+  docker compose -p "$project_name" -f "$compose_file" exec -T bifrost \
+    python -c 'import urllib.request; urllib.request.urlopen("http://localhost:8081/reset").read()' >/dev/null
+}
+
 for _ in $(seq 1 60); do
   if curl --max-time 2 -fsS "http://localhost:$host_port/health" >/dev/null 2>&1; then
     break
@@ -299,12 +321,12 @@ if [[ "$allowed_status" != "200" ]]; then
   exit 1
 fi
 
-if [[ ! -s "$counter_file" ]]; then
+if [[ "$(bifrost_hits)" == "0" ]]; then
   echo "Allowed request did not reach fake-bifrost; zero-hit assertion would be meaningless" >&2
   exit 1
 fi
 
-: >"$counter_file"
+reset_bifrost_hits
 
 status="$(
   curl -sS -o "$tmp_dir/blocked-response.json" -w '%{http_code}' \
@@ -320,9 +342,8 @@ if [[ "$status" != "400" && "$status" != "403" ]]; then
   exit 1
 fi
 
-if [[ -s "$counter_file" ]]; then
-  echo "Blocked request reached fake-bifrost upstream:" >&2
-  cat "$counter_file" >&2
+if [[ "$(bifrost_hits)" != "0" ]]; then
+  echo "Blocked request reached fake-bifrost upstream" >&2
   exit 1
 fi
 

@@ -47,7 +47,6 @@ services:
       PROMPTSHIELD_ENGINE_URL: ${PROMPTSHIELD_ENGINE_URL:-http://promptshield-engine:4321}
       PROMPTSHIELD_ENGINE_API_KEY: ${PROMPTSHIELD_ENGINE_API_KEY}
       PROMPTSHIELD_POLICY_PATH: ${PROMPTSHIELD_POLICY_PATH:-/policy/policy.yaml}
-      PROMPTSHIELD_MODEL_ROUTES: ${PROMPTSHIELD_MODEL_ROUTES:-}
     volumes:
       - ./policy.yaml:/policy/policy.yaml:ro
     expose:
@@ -257,3 +256,7 @@ volumes:
 networks:
   filter:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1

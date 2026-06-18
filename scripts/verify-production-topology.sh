@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+# Set SKIP_TYPECHECK=1 for static-only topology checks without Bun/Turbo.
+# Set SKIP_RUNTIME_SMOKE=1 when Docker or network access is unavailable.
+
 failures=0
 
 pass() {
@@ -148,6 +151,11 @@ test_bifrost_admin_proxy_has_access_control() {
     return
   fi
 
+  if ! grep -Eq 'allow[[:space:]]+172\.30\.0\.1[[:space:]]*;' <<<"$admin_block"; then
+    fail "test_bifrost_admin_proxy_has_access_control: /bifrost/ admin proxy should allow the fixed Docker bridge gateway for local browser access"
+    return
+  fi
+
   pass "test_bifrost_admin_proxy_has_access_control"
 }
 
@@ -169,6 +177,11 @@ test_promptshield_upstream_points_to_bifrost_v1() {
 
   if ! grep -q 'PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL=http://bifrost:8081/v1' .env.example; then
     fail "test_promptshield_upstream_points_to_bifrost_v1: .env.example must point PromptShield upstream to Bifrost /v1"
+    return
+  fi
+
+  if grep -Eq 'PROMPTSHIELD_MODEL_ROUTES' docker-compose.yml .env.example; then
+    fail "test_promptshield_upstream_points_to_bifrost_v1: PromptShield model routing must not be exposed in product Compose/env"
     return
   fi
 
@@ -299,7 +312,7 @@ test_docs_do_not_document_public_bifrost_inference() {
     return
   fi
 
-  if grep -ERn 'localhost:8080|Gateway only|\./promptshield-gateway|listening on :8080|Gateway[[:space:]]+\|[[:space:]]+`:8080`' promptshield-src/README.md promptshield-src/apps/docs/content/docs >/dev/null; then
+  if grep -ERn 'curl[^\n]*localhost:8080|http://localhost:8080/(health|metrics|v1)|Gateway only|\./promptshield-gateway|listening on :8080|Gateway[[:space:]]+\|[[:space:]]+`:8080`' promptshield-src/README.md promptshield-src/apps/docs/content/docs >/dev/null; then
     fail "test_docs_do_not_document_public_bifrost_inference: product docs must not publish standalone/direct PromptShield gateway component surfaces"
     return
   fi
@@ -380,6 +393,20 @@ test_bifrost_url_is_configured() {
   fi
 
   pass "test_bifrost_url_is_configured"
+}
+
+test_compose_uses_fixed_admin_bridge_gateway() {
+  if ! grep -q 'subnet: 172.30.0.0/24' docker-compose.yml; then
+    fail "test_compose_uses_fixed_admin_bridge_gateway: Compose network must pin the local Docker bridge subnet"
+    return
+  fi
+
+  if ! grep -q 'gateway: 172.30.0.1' docker-compose.yml; then
+    fail "test_compose_uses_fixed_admin_bridge_gateway: Compose network must pin the Docker bridge gateway allowed by Nginx"
+    return
+  fi
+
+  pass "test_compose_uses_fixed_admin_bridge_gateway"
 }
 
 test_config_admin_has_no_claimable_default() {
@@ -485,6 +512,11 @@ test_typecheck_covers_dashboard_and_api() {
     return
   fi
 
+  if [[ "${SKIP_TYPECHECK:-0}" == "1" ]]; then
+    pass "test_typecheck_covers_dashboard_and_api: runtime TypeScript execution skipped by SKIP_TYPECHECK=1"
+    return
+  fi
+
   if ! (cd promptshield-src && bunx turbo check-types --filter=web --filter=@promptshield/api --force); then
     fail "test_typecheck_covers_dashboard_and_api: focused web/API TypeScript check failed"
     return
@@ -511,6 +543,16 @@ test_blocked_request_smoke_test_exists() {
     return
   fi
 
+  if grep -q 'mktemp -d "$ROOT_DIR/' "$script"; then
+    fail "test_blocked_request_smoke_test_exists: smoke test temp directory must not be created inside the repository"
+    return
+  fi
+
+  if [[ "${SKIP_RUNTIME_SMOKE:-0}" == "1" ]]; then
+    pass "test_blocked_request_smoke_test_exists: Docker runtime smoke skipped by SKIP_RUNTIME_SMOKE=1"
+    return
+  fi
+
   if ! bash "$script"; then
     fail "test_blocked_request_smoke_test_exists: blocked-request smoke test failed"
     return
@@ -530,6 +572,7 @@ test_docs_do_not_document_public_bifrost_inference
 test_secret_bearing_bifrost_runtime_state_is_flagged
 test_dashboard_has_bifrost_router_status
 test_bifrost_url_is_configured
+test_compose_uses_fixed_admin_bridge_gateway
 test_config_admin_has_no_claimable_default
 test_router_admin_link_is_not_public_inference
 test_legacy_promptshield_provider_route_not_primary_nav

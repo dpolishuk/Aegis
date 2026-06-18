@@ -29,8 +29,9 @@ Clients must not call Bifrost `/v1` directly in production.
 `/bifrost/` is private/admin UI access for router/provider management only. It is
 not the public inference URL; Nginx blocks `/bifrost/v1` and `/bifrost/v1/*` so
 Bifrost inference cannot bypass PromptShield. The production Nginx config denies
-public access to `/bifrost/` and only allows localhost/RFC1918 private networks;
-tighten those ranges or place it behind your admin auth before exposing Nginx.
+public access to `/bifrost/` and only allows localhost plus the fixed Docker
+bridge gateway used by the local Compose stack. Add authentication or an
+explicit narrow admin allowlist before enabling remote admin access.
 
 ## Architecture
 
@@ -88,8 +89,7 @@ docker compose up -d
 
 ### 3. Configure Bifrost
 
-After startup, open the Bifrost admin UI through Nginx from localhost or an
-admin-only private network:
+After startup, open the Bifrost admin UI through Nginx from the Docker host:
 
 ```bash
 open http://localhost/bifrost/
