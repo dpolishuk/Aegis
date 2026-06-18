@@ -157,11 +157,92 @@ test_secret_bearing_bifrost_runtime_state_is_flagged() {
   pass "test_secret_bearing_bifrost_runtime_state_is_flagged"
 }
 
+test_dashboard_has_bifrost_router_status() {
+  if ! grep -q 'BIFROST_URL' promptshield-src/packages/env/src/server.ts; then
+    fail "test_dashboard_has_bifrost_router_status: server env must expose BIFROST_URL"
+    return
+  fi
+
+  if ! grep -q 'bifrostStatus' promptshield-src/packages/api/src/routers/dashboard.ts; then
+    fail "test_dashboard_has_bifrost_router_status: dashboard API must expose Bifrost router status"
+    return
+  fi
+
+  if ! grep -q 'trpc.dashboard.bifrostStatus' promptshield-src/apps/web/src/routes/_layout.dashboard.tsx; then
+    fail "test_dashboard_has_bifrost_router_status: dashboard UI must query Bifrost router status"
+    return
+  fi
+
+  if ! grep -Eiq 'Bifrost|Router' promptshield-src/apps/web/src/routes/_layout.dashboard.tsx; then
+    fail "test_dashboard_has_bifrost_router_status: dashboard UI must label the Bifrost/router status"
+    return
+  fi
+
+  pass "test_dashboard_has_bifrost_router_status"
+}
+
+test_bifrost_url_is_configured() {
+  if ! grep -q 'BIFROST_URL:.*http://bifrost:8081' docker-compose.yml; then
+    fail "test_bifrost_url_is_configured: dashboard compose env must set BIFROST_URL=http://bifrost:8081"
+    return
+  fi
+
+  if ! grep -q '^BIFROST_URL=http://bifrost:8081' .env.example; then
+    fail "test_bifrost_url_is_configured: root .env.example must document BIFROST_URL"
+    return
+  fi
+
+  if ! grep -q 'BIFROST_URL.*default("http://bifrost:8081")' promptshield-src/packages/env/src/server.ts; then
+    fail "test_bifrost_url_is_configured: server env must default BIFROST_URL to http://bifrost:8081"
+    return
+  fi
+
+  pass "test_bifrost_url_is_configured"
+}
+
+test_router_admin_link_is_not_public_inference() {
+  local web_sources
+  web_sources="$(cat promptshield-src/apps/web/src/routes/_layout.tsx promptshield-src/apps/web/src/routes/_layout.dashboard.tsx promptshield-src/apps/web/src/routes/_layout.gateway.tsx)"
+
+  if ! grep -q 'href="/bifrost/"' <<<"$web_sources"; then
+    fail "test_router_admin_link_is_not_public_inference: dashboard/navigation must link to /bifrost/ admin UI"
+    return
+  fi
+
+  if grep -Eiq 'href="[^"]*/bifrost/[^"]*v1|href="[^"]*8081[^"]*/v1|to="/bifrost/[^"]*v1|Bifrost[^"]*(public inference|inference endpoint)' <<<"$web_sources"; then
+    fail "test_router_admin_link_is_not_public_inference: Bifrost admin link/copy must not present public inference"
+    return
+  fi
+
+  pass "test_router_admin_link_is_not_public_inference"
+}
+
+test_legacy_promptshield_provider_route_not_primary_nav() {
+  local layout_source
+  layout_source="$(cat promptshield-src/apps/web/src/routes/_layout.tsx)"
+
+  if grep -Eq 'to: "/gateway"|to="/gateway"' <<<"$layout_source"; then
+    fail "test_legacy_promptshield_provider_route_not_primary_nav: main nav must not expose legacy /gateway provider routing"
+    return
+  fi
+
+  if ! grep -Eiq 'Bifrost|provider/router control plane|Provider routing is managed in Bifrost' promptshield-src/apps/web/src/routes/_layout.gateway.tsx; then
+    fail "test_legacy_promptshield_provider_route_not_primary_nav: legacy /gateway route must explain provider routing belongs to Bifrost"
+    return
+  fi
+
+  pass "test_legacy_promptshield_provider_route_not_primary_nav"
+}
+
 test_public_v1_routes_to_promptshield_not_bifrost
 test_promptshield_upstream_points_to_bifrost_v1
 test_bifrost_is_internal_and_pinned
 test_docs_do_not_document_public_bifrost_inference
 test_secret_bearing_bifrost_runtime_state_is_flagged
+test_dashboard_has_bifrost_router_status
+test_bifrost_url_is_configured
+test_router_admin_link_is_not_public_inference
+test_legacy_promptshield_provider_route_not_primary_nav
 
 if (( failures > 0 )); then
   printf '\n%d production topology check(s) failed.\n' "$failures" >&2

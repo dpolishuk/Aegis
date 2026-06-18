@@ -518,6 +518,33 @@ function GatewayPage() {
       </header>
 
       <div className="mx-auto w-full max-w-3xl space-y-4 p-6">
+        <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+          <div className="flex items-start gap-3">
+            <AlertTriangle
+              size={15}
+              className="mt-0.5 shrink-0 text-primary"
+              aria-hidden="true"
+            />
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-primary">
+                Provider routing is managed in Bifrost
+              </p>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                In this deployment, PromptShield stays inline for security policy
+                and audit. Provider keys, model routing, and router governance are
+                managed through the Bifrost provider/router control plane.
+              </p>
+              <a
+                href="/bifrost/"
+                className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-primary/25 bg-background px-2.5 py-1.5 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10"
+              >
+                Open Bifrost router admin
+                <ChevronRight size={11} aria-hidden="true" />
+              </a>
+            </div>
+          </div>
+        </div>
+
         {isGatewayApiConfig && (
           <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
             <p className="text-[11px] text-primary/90">

@@ -73,6 +73,7 @@ services:
       ENGINE_URL: http://promptshield-engine:4321
       ENGINE_API_KEY: ${PROMPTSHIELD_ENGINE_API_KEY:-dev-engine-api-key}
       GATEWAY_URL: http://promptshield-gateway:8080
+      BIFROST_URL: http://bifrost:8081
       POLICY_FILE_PATH: /policy/policy.yaml
       GATEWAY_ENV_PATH: /policy/gateway.env
       AUDIT_INGEST_SECRET: ${AUDIT_INGEST_SECRET:-dev-ingest-secret}

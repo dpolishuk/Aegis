@@ -7,6 +7,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Cpu,
+  Network,
   RefreshCw,
   ShieldOff,
   Terminal,
@@ -241,6 +242,11 @@ function DashboardPage() {
       refetchInterval: 30_000,
     }),
   );
+  const bifrostStatus = useQuery(
+    trpc.dashboard.bifrostStatus.queryOptions(undefined, {
+      refetchInterval: 30_000,
+    }),
+  );
 
   const statsReady = stats.status === "success" || stats.status === "error";
   const isEmpty = statsReady && (stats.data?.allTimeTotal ?? 0) === 0;
@@ -252,7 +258,11 @@ function DashboardPage() {
   const threatRate =
     s && s.totalRequests > 0 ? parseFloat(String(s.threatRate)) : null;
   const isRefreshing =
-    stats.isFetching || recentBlocks.isFetching || gatewayStatus.isFetching;
+    stats.isFetching ||
+    recentBlocks.isFetching ||
+    gatewayStatus.isFetching ||
+    engineStatus.isFetching ||
+    bifrostStatus.isFetching;
 
   const threatAccent =
     threatRate == null
@@ -301,6 +311,7 @@ function DashboardPage() {
               breakdown.refetch();
               gatewayStatus.refetch();
               engineStatus.refetch();
+              bifrostStatus.refetch();
             }}
             aria-label="Refresh dashboard"
             disabled={isRefreshing}
@@ -319,17 +330,30 @@ function DashboardPage() {
         {/* Service status */}
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill
-            label="Gateway"
+            label="PromptShield Gateway"
             online={gatewayStatus.data?.online}
             latencyMs={gatewayStatus.data?.latencyMs}
             loading={gatewayStatus.isPending}
           />
           <StatusPill
-            label="Engine"
+            label="PromptShield Engine"
             online={engineStatus.data?.online}
             latencyMs={engineStatus.data?.latencyMs}
             loading={engineStatus.isPending}
           />
+          <StatusPill
+            label="Bifrost Router"
+            online={bifrostStatus.data?.online}
+            latencyMs={bifrostStatus.data?.latencyMs}
+            loading={bifrostStatus.isPending}
+          />
+          <a
+            href="/bifrost/"
+            className="mono flex items-center gap-1.5 rounded border border-[var(--dev-border)] bg-[var(--dev-panel)] px-3 py-2 text-[12px] text-[var(--dev-text)] transition-colors hover:bg-[var(--dev-panel-hi)]"
+          >
+            <Network size={12} aria-hidden="true" />
+            router admin
+          </a>
           {gatewayStatus.data?.online === false && (
             <span className="text-[11px] text-muted-foreground">
               Gateway is offline
@@ -339,6 +363,13 @@ function DashboardPage() {
             gatewayStatus.data?.online !== false && (
               <span className="text-[11px] text-muted-foreground">
                 Engine is offline
+              </span>
+            )}
+          {bifrostStatus.data?.online === false &&
+            gatewayStatus.data?.online !== false &&
+            engineStatus.data?.online !== false && (
+              <span className="text-[11px] text-muted-foreground">
+                Bifrost router is offline
               </span>
             )}
         </div>
