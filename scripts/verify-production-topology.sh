@@ -115,6 +115,37 @@ test_bifrost_admin_proxy_blocks_inference_subpath() {
   pass "test_bifrost_admin_proxy_blocks_inference_subpath"
 }
 
+test_bifrost_admin_proxy_has_access_control() {
+  local admin_block
+  admin_block="$(awk '
+    $0 ~ /^[[:space:]]*location[[:space:]]+\/bifrost\/[[:space:]]*\{/ { in_block=1; depth=0 }
+    in_block {
+      print
+      opens=gsub(/\{/, "{")
+      closes=gsub(/\}/, "}")
+      depth += opens - closes
+      if (depth <= 0) exit
+    }
+  ' nginx/nginx.conf)"
+
+  if [[ -z "$admin_block" ]]; then
+    fail "test_bifrost_admin_proxy_has_access_control: nginx/nginx.conf has no /bifrost/ admin proxy"
+    return
+  fi
+
+  if ! grep -Eq 'auth_basic|auth_request|allow[[:space:]]|deny[[:space:]]' <<<"$admin_block"; then
+    fail "test_bifrost_admin_proxy_has_access_control: /bifrost/ admin proxy must be protected by explicit auth or allow/deny access control"
+    return
+  fi
+
+  if ! grep -Eq 'deny[[:space:]]+all[[:space:]]*;' <<<"$admin_block"; then
+    fail "test_bifrost_admin_proxy_has_access_control: /bifrost/ admin proxy must deny non-admin networks by default"
+    return
+  fi
+
+  pass "test_bifrost_admin_proxy_has_access_control"
+}
+
 test_promptshield_upstream_points_to_bifrost_v1() {
   if ! grep -q 'PROMPTSHIELD_PROVIDER:.*openai-compatible' docker-compose.yml; then
     fail "test_promptshield_upstream_points_to_bifrost_v1: PromptShield must run in openai-compatible provider mode"
@@ -175,20 +206,30 @@ test_bifrost_is_internal_and_pinned() {
 
 test_docs_do_not_document_public_bifrost_inference() {
   local docs
-  docs="$(cat README.md .env.example)"
+  docs="$(cat README.md .env.example promptshield-src/README.md promptshield-src/apps/docs/content/docs/*.mdx)"
 
   if grep -Eiq 'curl[^\n]*(8081|/bifrost/[^[:space:]]*v1|bifrost:8081/v1)' <<<"$docs"; then
     fail "test_docs_do_not_document_public_bifrost_inference: docs/env must not show curl examples that call Bifrost /v1 directly"
     return
   fi
 
-  if grep -Eiq 'your-server:8081|public[^\n]*(Bifrost|8081)|(use|call|set|configure)[^\n]*(Bifrost|8081)[^\n]*(public inference|public endpoint)' <<<"$docs"; then
+  if grep -Eiq 'your-server:8081|public[^\n]*(Bifrost[^/]|8081)|(use|call|set|configure)[^\n]*(Bifrost|8081)[^\n]*(public inference|public endpoint)' <<<"$docs"; then
     fail "test_docs_do_not_document_public_bifrost_inference: docs/env must not present Bifrost or :8081 as a public inference endpoint"
     return
   fi
 
   if grep -Eq '^(OPENAI_API_KEY|ANTHROPIC_API_KEY|GEMINI_API_KEY)=' .env.example; then
     fail "test_docs_do_not_document_public_bifrost_inference: provider API key examples must not live in .env.example as PromptShield product env"
+    return
+  fi
+
+  if grep -ERn '^(OPENAI_API_KEY|ANTHROPIC_API_KEY|GEMINI_API_KEY)=' promptshield-src/README.md promptshield-src/apps/docs/content/docs >/dev/null; then
+    fail "test_docs_do_not_document_public_bifrost_inference: product docs must not instruct users to store provider API keys in PromptShield"
+    return
+  fi
+
+  if grep -ERn 'PROMPTSHIELD_PROVIDER=(gemini|openai|anthropic|selfhosted)([^-[:alnum:]_]|$)' promptshield-src/README.md promptshield-src/apps/docs/content/docs >/dev/null; then
+    fail "test_docs_do_not_document_public_bifrost_inference: product docs must preserve Bifrost as provider control plane"
     return
   fi
 
@@ -219,7 +260,7 @@ test_secret_bearing_bifrost_runtime_state_is_flagged() {
     fi
   fi
 
-  pass "test_secret_bearing_bifrost_runtime_state_is_flagged"
+  fail "test_secret_bearing_bifrost_runtime_state_is_flagged: remove tracked bifrost-data runtime files from git and keep them ignored"
 }
 
 test_dashboard_has_bifrost_router_status() {
@@ -296,11 +337,62 @@ test_legacy_promptshield_provider_route_not_primary_nav() {
     return
   fi
 
+  if grep -Eq 'trpc\.gateway\.(addApiKey|clearApiKeys)|<KeyRow|Add route|Custom model routes|Upstream API Keys' promptshield-src/apps/web/src/routes/_layout.gateway.tsx; then
+    fail "test_legacy_promptshield_provider_route_not_primary_nav: legacy /gateway route must not expose PromptShield provider/model/key editing controls"
+    return
+  fi
+
+  if grep -Eq 'addApiKey|clearApiKeys' promptshield-src/packages/api/src/routers/gateway.ts; then
+    fail "test_legacy_promptshield_provider_route_not_primary_nav: gateway API must not expose competing provider key mutations"
+    return
+  fi
+
+  if grep -Eq 'updates\.PROMPTSHIELD_(PROVIDER|PROVIDERS|MODEL_ROUTES|UPSTREAM_API_KEY|GEMINI_UPSTREAM_URL|OPENAI_UPSTREAM_URL|ANTHROPIC_UPSTREAM_URL|SELFHOSTED_UPSTREAM_URL)' promptshield-src/packages/api/src/routers/gateway.ts; then
+    fail "test_legacy_promptshield_provider_route_not_primary_nav: gateway API updateConfig must not write provider routing/key ownership fields"
+    return
+  fi
+
   pass "test_legacy_promptshield_provider_route_not_primary_nav"
+}
+
+test_typecheck_covers_dashboard_and_api() {
+  if ! grep -q '"check-types": "tsc -p tsconfig.json --noEmit"' promptshield-src/apps/web/package.json; then
+    fail "test_typecheck_covers_dashboard_and_api: web package must run TypeScript in check-types"
+    return
+  fi
+
+  if ! grep -q '"check-types": "tsc -p tsconfig.json --noEmit"' promptshield-src/packages/api/package.json; then
+    fail "test_typecheck_covers_dashboard_and_api: @promptshield/api package must run TypeScript in check-types"
+    return
+  fi
+
+  pass "test_typecheck_covers_dashboard_and_api"
+}
+
+test_blocked_request_smoke_test_exists() {
+  local script="scripts/smoke-blocked-request-no-bifrost-hit.sh"
+
+  if [[ ! -f "$script" ]]; then
+    fail "test_blocked_request_smoke_test_exists: missing blocked-request smoke test script"
+    return
+  fi
+
+  if ! bash -n "$script"; then
+    fail "test_blocked_request_smoke_test_exists: smoke test script has shell syntax errors"
+    return
+  fi
+
+  if ! grep -Eq 'fake-bifrost|UPSTREAM_HITS|blocked request' "$script"; then
+    fail "test_blocked_request_smoke_test_exists: smoke test must use a fake Bifrost upstream/counter and a blocked request"
+    return
+  fi
+
+  pass "test_blocked_request_smoke_test_exists"
 }
 
 test_public_v1_routes_to_promptshield_not_bifrost
 test_bifrost_admin_proxy_blocks_inference_subpath
+test_bifrost_admin_proxy_has_access_control
 test_promptshield_upstream_points_to_bifrost_v1
 test_bifrost_is_internal_and_pinned
 test_docs_do_not_document_public_bifrost_inference
@@ -309,6 +401,8 @@ test_dashboard_has_bifrost_router_status
 test_bifrost_url_is_configured
 test_router_admin_link_is_not_public_inference
 test_legacy_promptshield_provider_route_not_primary_nav
+test_typecheck_covers_dashboard_and_api
+test_blocked_request_smoke_test_exists
 
 if (( failures > 0 )); then
   printf '\n%d production topology check(s) failed.\n' "$failures" >&2

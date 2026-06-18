@@ -7,11 +7,12 @@ description: Common issues and how to fix them.
 
 **Symptom:** `make run` exits immediately or fails.
 
-Check your `.env` has a valid provider and API key:
+Check PromptShield is pointed at Bifrost and configure provider credentials in
+Bifrost:
 
 ```bash
-PROMPTSHIELD_PROVIDER=gemini
-GEMINI_API_KEY=your-key
+PROMPTSHIELD_PROVIDER=openai-compatible
+PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL=http://bifrost:8081/v1
 ```
 
 Run `curl -s http://localhost:8080/health` to confirm the process is up.
@@ -42,7 +43,7 @@ Restart the gateway after changing `.env`.
 
 **Symptom:** Requests return `401` or `403` from upstream.
 
-- Confirm the API key matches the provider set in `PROMPTSHIELD_PROVIDER`
+- Confirm the provider key and route are configured in Bifrost
 - Check for leading/trailing whitespace in `.env` values
 - Verify the key has not expired or been revoked
 

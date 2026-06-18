@@ -3,16 +3,10 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   AlertTriangle,
-  Check,
   ChevronDown,
   ChevronRight,
-  Eye,
-  EyeOff,
-  Plus,
   RefreshCw,
   Server,
-  Trash2,
-  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -67,6 +61,10 @@ const PROVIDERS: {
     keyVar: "",
   },
 ];
+
+function isProvider(value: string): value is Provider {
+  return PROVIDERS.some((provider) => provider.id === value);
+}
 
 /* Helpers */
 function Sk({ className = "" }: { className?: string }) {
@@ -173,119 +171,34 @@ function SectionCard({
   );
 }
 
-/* API Key row */
-function KeyRow({
-  providerLabel,
-  count,
-  onAdd,
-  onClear,
-  adding,
-  disabled = false,
-}: {
-  providerLabel: string;
-  count: number;
-  onAdd: (key: string) => void;
-  onClear: () => void;
-  adding: boolean;
-  disabled?: boolean;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const [newKey, setNewKey] = useState("");
-  const [show, setShow] = useState(false);
-
-  function submitKey() {
-    if (!newKey.trim()) return;
-    onAdd(newKey.trim());
-    setNewKey("");
-    setExpanded(false);
-  }
-
+function BifrostControlPlaneCard() {
   return (
-    <div className="rounded-md border border-border bg-background">
-      <div className="flex items-center justify-between px-3 py-2.5">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="text-xs font-medium text-foreground">
-            {providerLabel}
-          </span>
-          {count > 0 ? (
-            <span className="flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-success">
-              {count} key{count > 1 ? "s" : ""}
-              {count > 1 && <span className="opacity-60">· round-robin</span>}
-            </span>
-          ) : (
-            <span className="rounded-full bg-muted/40 px-2 py-0.5 font-mono text-[10px] text-muted-foreground/50">
-              not set
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5">
-          {count > 0 && (
-            <button
-              onClick={onClear}
-              disabled={disabled}
-              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/40 transition-colors hover:bg-destructive/10 hover:text-destructive"
-              aria-label="Clear all keys"
-            >
-              <Trash2 size={11} aria-hidden="true" />
-            </button>
-          )}
-          <button
-            onClick={() => setExpanded(!expanded)}
-            disabled={disabled}
-            className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+    <div className="rounded-md border border-primary/20 bg-primary/5 px-4 py-3">
+      <div className="flex items-start gap-3">
+        <Server
+          size={15}
+          className="mt-0.5 shrink-0 text-primary"
+          aria-hidden="true"
+        />
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-primary">
+            Bifrost owns provider routing and secrets
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+            Configure provider credentials, model routes, key pools, fallback
+            order, and router governance in the Bifrost provider/router control
+            plane. This page only manages PromptShield policy and security
+            gateway settings.
+          </p>
+          <a
+            href="/bifrost/"
+            className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-primary/25 bg-background px-2.5 py-1.5 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10"
           >
-            <Plus size={10} aria-hidden="true" />
-            Add
-          </button>
+            Open Bifrost router admin
+            <ChevronRight size={11} aria-hidden="true" />
+          </a>
         </div>
       </div>
-
-      {expanded && (
-        <div className="border-t border-border px-3 py-2.5">
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <input
-                type={show ? "text" : "password"}
-                value={newKey}
-                onChange={(e) => setNewKey(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && submitKey()}
-                placeholder="Paste API key…"
-                className="w-full rounded-md border border-border bg-background pr-8 pl-3 py-2 font-mono text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={() => setShow(!show)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-muted-foreground"
-                aria-label={show ? "Hide key" : "Show key"}
-              >
-                {show ? <EyeOff size={11} /> : <Eye size={11} />}
-              </button>
-            </div>
-            <button
-              onClick={submitKey}
-              disabled={!newKey.trim() || adding}
-              className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-            >
-              <Check size={11} aria-hidden="true" />
-              Add
-            </button>
-            <button
-              onClick={() => {
-                setExpanded(false);
-                setNewKey("");
-              }}
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent"
-            >
-              <X size={11} aria-hidden="true" />
-            </button>
-          </div>
-          <p className="mt-1.5 text-[10px] text-muted-foreground/40">
-            Key is stored in the gateway .env file. Multiple keys rotate in
-            round-robin.
-          </p>
-        </div>
-      )}
     </div>
   );
 }
@@ -313,28 +226,6 @@ function GatewayPage() {
     }),
   );
 
-  const addKey = useMutation(
-    trpc.gateway.addApiKey.mutationOptions({
-      onSuccess: (data) => {
-        toast.success(`Key added (${data.count} total)`);
-        gatewayConfig.refetch();
-      },
-      onError: (error) =>
-        toast.error(getErrorMessage(error, "Failed to add key")),
-    }),
-  );
-
-  const clearKeys = useMutation(
-    trpc.gateway.clearApiKeys.mutationOptions({
-      onSuccess: () => {
-        toast.success("Keys cleared");
-        gatewayConfig.refetch();
-      },
-      onError: (error) =>
-        toast.error(getErrorMessage(error, "Failed to clear keys")),
-    }),
-  );
-
   // Form state — initialised from fetched config
   const [mode, setMode] = useState<"gateway" | "security">("security");
   const [engineUrl, setEngineUrl] = useState("");
@@ -347,7 +238,7 @@ function GatewayPage() {
   const [providers, setProviders] = useState<Provider[]>(["gemini"]);
   const [providerUrls, setProviderUrls] = useState<Record<string, string>>({});
   const [modelRoutes, setModelRoutes] = useState<
-    { model: string; provider: string }[]
+    { model: string; provider: Provider }[]
   >([]);
   const [port, setPort] = useState("8080");
   const [chatRoute, setChatRoute] = useState("/v1/chat/completions");
@@ -366,7 +257,12 @@ function GatewayPage() {
     setModel(d.models?.global ?? "");
     setProviders(d.providers as Provider[]);
     setProviderUrls(d.providerUrls ?? {});
-    setModelRoutes(d.modelRoutes ?? []);
+    setModelRoutes(
+      (d.modelRoutes ?? []).filter(
+        (route): route is { model: string; provider: Provider } =>
+          isProvider(route.provider),
+      ),
+    );
     setPort(d.port);
     setChatRoute(d.chatRoute);
     setPolicyPath(d.policyPath);
@@ -378,18 +274,6 @@ function GatewayPage() {
   }
 
   function handleSave() {
-    const validProviderIds = new Set<Provider>(PROVIDERS.map((p) => p.id));
-    const validModelRoutes = modelRoutes.filter(
-      (route): route is { model: string; provider: Provider } =>
-        validProviderIds.has(route.provider as Provider),
-    );
-
-    if (validModelRoutes.length !== modelRoutes.length) {
-      toast.warning(
-        "Some model routes have invalid providers and were ignored",
-      );
-    }
-
     updateConfig.mutate({
       mode,
       engineUrl,
@@ -405,7 +289,7 @@ function GatewayPage() {
         anthropic: "",
         selfhosted: "",
       },
-      modelRoutes: validModelRoutes,
+      modelRoutes,
       port,
       chatRoute,
       policyPath,
@@ -426,14 +310,6 @@ function GatewayPage() {
     openai: 0,
     anthropic: 0,
   };
-
-  // Multi-provider toggle helpers
-  function toggleProvider(p: Provider) {
-    setProviders((prev) =>
-      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p],
-    );
-    markDirty();
-  }
 
   return (
     <div className="flex min-h-full flex-col">
@@ -786,294 +662,11 @@ function GatewayPage() {
           )}
         </SectionCard>
 
-        {/* Provider */}
         <SectionCard
-          title="Provider"
-          description="Which LLM provider(s) to route traffic to"
+          title="Bifrost Router"
+          description="Provider routing, model routing, and provider API keys"
         >
-          {loading ? (
-            <Sk className="h-24 w-full" />
-          ) : (
-            <>
-              {/* Single / Multi toggle */}
-              <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/20 p-0.5 w-fit">
-                {(["single", "multi"] as const).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => {
-                      setProviderMode(m);
-                      markDirty();
-                    }}
-                    className={`rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
-                      providerMode === m
-                        ? "bg-card text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {m === "single" ? "Single Provider" : "Multi-Provider"}
-                  </button>
-                ))}
-              </div>
-
-              {providerMode === "single" ? (
-                <div className="space-y-3">
-                  <Field label="Provider">
-                    <select
-                      value={provider}
-                      onChange={(e) => {
-                        setProvider(e.target.value as Provider);
-                        markDirty();
-                      }}
-                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    >
-                      {PROVIDERS.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.label}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field
-                    label="Upstream URL override"
-                    helper="Leave blank to use the provider default endpoint"
-                  >
-                    <Input
-                      value={upstreamUrl}
-                      onChange={(e) => {
-                        setUpstreamUrl(e.target.value);
-                        markDirty();
-                      }}
-                      placeholder={
-                        PROVIDERS.find((p) => p.id === provider)?.id ===
-                        "selfhosted"
-                          ? "http://localhost:11434/v1"
-                          : "auto"
-                      }
-                      mono
-                    />
-                  </Field>
-                  <Field
-                    label="Default model"
-                    helper="Optional — override per-request if omitted"
-                  >
-                    <Input
-                      value={model}
-                      onChange={(e) => {
-                        setModel(e.target.value);
-                        markDirty();
-                      }}
-                      placeholder={
-                        PROVIDERS.find((p) => p.id === provider)
-                          ?.defaultModel ?? ""
-                      }
-                      mono
-                    />
-                  </Field>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div>
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-                      Active providers — first in list is the fallback
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {PROVIDERS.filter(
-                        (p) => p.id !== "openai-compatible",
-                      ).map((p) => {
-                        const active = providers.includes(p.id);
-                        return (
-                          <button
-                            key={p.id}
-                            onClick={() => toggleProvider(p.id)}
-                            className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                              active
-                                ? "border-primary/40 bg-primary/10 text-primary"
-                                : "border-border bg-background text-muted-foreground hover:bg-accent"
-                            }`}
-                          >
-                            {active && <Check size={10} aria-hidden="true" />}
-                            {p.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Per-provider URL overrides */}
-                  {providers.length > 0 && (
-                    <div className="space-y-2.5">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-                        Upstream URL overrides (optional)
-                      </p>
-                      {providers.map((p) => (
-                        <Field
-                          key={p}
-                          label={PROVIDERS.find((x) => x.id === p)?.label ?? p}
-                        >
-                          <Input
-                            value={providerUrls[p] ?? ""}
-                            onChange={(e) => {
-                              setProviderUrls((prev) => ({
-                                ...prev,
-                                [p]: e.target.value,
-                              }));
-                              markDirty();
-                            }}
-                            placeholder="auto"
-                            mono
-                          />
-                        </Field>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Model routes */}
-                  <div>
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-                      Custom model routes
-                    </p>
-                    <div className="overflow-hidden rounded-md border border-border">
-                      <div className="grid grid-cols-[1fr_1fr_32px] gap-0 border-b border-border bg-muted/20 px-3 py-2">
-                        {["Model pattern", "Provider", ""].map((h) => (
-                          <span
-                            key={h}
-                            className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50"
-                          >
-                            {h}
-                          </span>
-                        ))}
-                      </div>
-                      {/* Built-in routes */}
-                      {[
-                        { model: "gpt-*, o1*, o3*", provider: "openai" },
-                        { model: "gemini-*", provider: "gemini" },
-                      ].map((r) => (
-                        <div
-                          key={r.model}
-                          className="grid grid-cols-[1fr_1fr_32px] items-center gap-0 border-b border-border/40 px-3 py-2 last:border-0"
-                        >
-                          <span className="font-mono text-[11px] text-muted-foreground/50">
-                            {r.model}
-                          </span>
-                          <span className="font-mono text-[11px] text-muted-foreground/50">
-                            {r.provider}
-                          </span>
-                          <span className="text-[9px] text-muted-foreground/30">
-                            built-in
-                          </span>
-                        </div>
-                      ))}
-                      {modelRoutes.map((r, i) => (
-                        <div
-                          key={i}
-                          className="grid grid-cols-[1fr_1fr_32px] items-center gap-2 border-b border-border/40 px-3 py-1.5 last:border-0"
-                        >
-                          <input
-                            value={r.model}
-                            onChange={(e) => {
-                              const next = [...modelRoutes];
-                              next[i] = { ...next[i]!, model: e.target.value };
-                              setModelRoutes(next);
-                              markDirty();
-                            }}
-                            placeholder="model-name"
-                            className="rounded border border-border bg-background px-2 py-1 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
-                          />
-                          <input
-                            value={r.provider}
-                            onChange={(e) => {
-                              const next = [...modelRoutes];
-                              next[i] = {
-                                ...next[i]!,
-                                provider: e.target.value,
-                              };
-                              setModelRoutes(next);
-                              markDirty();
-                            }}
-                            placeholder="provider"
-                            className="rounded border border-border bg-background px-2 py-1 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
-                          />
-                          <button
-                            onClick={() => {
-                              setModelRoutes(
-                                modelRoutes.filter((_, j) => j !== i),
-                              );
-                              markDirty();
-                            }}
-                            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/40 hover:text-destructive"
-                          >
-                            <X size={11} aria-hidden="true" />
-                          </button>
-                        </div>
-                      ))}
-                      <button
-                        onClick={() => {
-                          setModelRoutes([
-                            ...modelRoutes,
-                            { model: "", provider: "" },
-                          ]);
-                          markDirty();
-                        }}
-                        className="flex w-full items-center gap-1.5 px-3 py-2.5 text-[11px] text-muted-foreground/50 transition-colors hover:text-muted-foreground"
-                      >
-                        <Plus size={11} aria-hidden="true" />
-                        Add route
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </SectionCard>
-
-        {/* API Keys */}
-        <SectionCard
-          title="Upstream API Keys"
-          description="Server-side fallback keys sent to the LLM provider. Multiple keys rotate in round-robin."
-        >
-          {loading ? (
-            <Sk className="h-24 w-full" />
-          ) : (
-            <div className="space-y-2">
-              {(
-                [
-                  {
-                    provider: "gemini",
-                    label: "Google Gemini",
-                    count: keyCounts.gemini,
-                  },
-                  {
-                    provider: "openai",
-                    label: "OpenAI",
-                    count: keyCounts.openai,
-                  },
-                  {
-                    provider: "anthropic",
-                    label: "Anthropic",
-                    count: keyCounts.anthropic,
-                  },
-                  {
-                    provider: "upstream",
-                    label: "Global fallback (single-provider)",
-                    count: keyCounts.upstream,
-                  },
-                ] as const
-              ).map((row) => (
-                <KeyRow
-                  key={row.provider}
-                  providerLabel={row.label}
-                  count={row.count}
-                  onAdd={(key) =>
-                    addKey.mutate({ provider: row.provider, key })
-                  }
-                  onClear={() => clearKeys.mutate({ provider: row.provider })}
-                  adding={addKey.isPending}
-                  disabled={isGatewayApiConfig}
-                />
-              ))}
-            </div>
-          )}
+          {loading ? <Sk className="h-24 w-full" /> : <BifrostControlPlaneCard />}
         </SectionCard>
 
         {/* Advanced */}

@@ -26,10 +26,11 @@ LLM provider
 Blocked PromptShield requests must stop at PromptShield and must not reach Bifrost.
 Clients must not call Bifrost `/v1` directly in production.
 
-`/bifrost/` is local/admin UI access for router/provider management only. It is not
-the public inference URL; Nginx blocks `/bifrost/v1` and `/bifrost/v1/*` so
-Bifrost inference cannot bypass PromptShield. Protect `/bifrost/` with your
-normal admin network, SSO/VPN, or firewall controls.
+`/bifrost/` is private/admin UI access for router/provider management only. It is
+not the public inference URL; Nginx blocks `/bifrost/v1` and `/bifrost/v1/*` so
+Bifrost inference cannot bypass PromptShield. The production Nginx config denies
+public access to `/bifrost/` and only allows localhost/RFC1918 private networks;
+tighten those ranges or place it behind your admin auth before exposing Nginx.
 
 ## Architecture
 
@@ -77,12 +78,7 @@ nano .env
 
 Provider API keys and routing configuration belong to Bifrost. Add provider keys
 through the Bifrost admin UI or your approved secret-management workflow; do not
-commit real provider secrets to this repository.
-
-Tracked `bifrost-data/*` files are runtime state and may contain provider keys,
-tokens, sessions, or logs. Treat them as secret-bearing state, do not print their
-contents in reviews, and remove or sanitize them in a dedicated follow-up before
-publishing this repository.
+commit real provider secrets or `bifrost-data/*` runtime state to this repository.
 
 ### 2. Run
 
@@ -92,7 +88,8 @@ docker compose up -d
 
 ### 3. Configure Bifrost
 
-After startup, open the Bifrost admin UI through Nginx from an admin-only network:
+After startup, open the Bifrost admin UI through Nginx from localhost or an
+admin-only private network:
 
 ```bash
 open http://localhost/bifrost/

@@ -3,7 +3,10 @@ title: Gateway
 description: Setup guide for the PromptShield gateway.
 ---
 
-The gateway is a single Go binary. It handles provider routing, API key management, rate limiting, token budgets, audit logging, and Prometheus metrics. Connect the detection engine to add scanning and policy enforcement.
+The gateway is a single Go binary. In the combined PromptShield + Bifrost product
+it handles inline policy enforcement, rate limiting, token budgets, audit
+logging, and Prometheus metrics before traffic reaches Bifrost. Bifrost owns
+provider routing and provider API keys.
 
 ## Requirements
 
@@ -28,13 +31,14 @@ Grab the binary for your platform from [releases](https://github.com/promptshiel
 cp .env.example .env
 ```
 
-Minimum required:
+Combined-product minimum:
 
 ```bash
-PROMPTSHIELD_PROVIDER=gemini   # gemini | openai | anthropic | openai-compatible | selfhosted
-GEMINI_API_KEY=your-key        # key for your chosen provider
+PROMPTSHIELD_PROVIDER=openai-compatible
+PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL=http://bifrost:8081/v1
 ```
 
+Configure provider API keys and model routing in Bifrost, not in PromptShield.
 See [Environment Variables](/docs/environment-variables) for the full list.
 
 ## Run
@@ -85,20 +89,11 @@ PROMPTSHIELD_ENGINE_API_KEY=your-engine-key
 
 See [Engine](/docs/engine) for setup.
 
-## API key vault
+## Provider keys and routing
 
-Configure key pools per provider using comma-separated values. The gateway round-robins across them — your app sends a placeholder, the real keys never leave the gateway.
-
-```bash
-OPENAI_API_KEY=key1,key2,key3
-ANTHROPIC_API_KEY=key1,key2
-GEMINI_API_KEY=key1
-```
-
-Key resolution order per request:
-1. `x-llm-api-key` or provider-specific header from request
-2. Configured key pool (round-robin)
-3. `Authorization: Bearer` passthrough
+Provider credentials, key pools, fallback order, and model routing are managed in
+Bifrost. Keep PromptShield configured as an OpenAI-compatible upstream to
+Bifrost so blocked requests stop before provider routing.
 
 ## Policy hot-reload
 

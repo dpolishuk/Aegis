@@ -24,7 +24,7 @@ cd promptshield
 
 cp .env.local.example .env.local
 # Required: BETTER_AUTH_SECRET (any 32+ char string)
-# Required: your LLM provider API key
+# Provider API keys are configured in Bifrost for the combined product.
 
 docker compose -f docker-compose.dev.yml up --build
 ```
@@ -63,8 +63,8 @@ Open a new terminal:
 cd promptshield-gateway
 
 cp .env.example .env.local
-# Required: PROMPTSHIELD_PROVIDER (gemini | openai | anthropic | selfhosted)
-# Required: your provider API key (e.g. GEMINI_API_KEY)
+# Required: PROMPTSHIELD_PROVIDER=openai-compatible
+# Required: PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL=http://bifrost:8081/v1
 # Required: PROMPTSHIELD_ENGINE_URL=http://localhost:4321
 # Required: PROMPTSHIELD_ENGINE_API_KEY — must match the engine's PROMPTSHIELD_API_KEY
 
@@ -144,8 +144,8 @@ If you only need gateway controls (rate limiting, token budgets, audit logging) 
 cd promptshield-gateway
 
 cp .env.example .env
-# PROMPTSHIELD_PROVIDER=gemini
-# GEMINI_API_KEY=your-key
+# PROMPTSHIELD_PROVIDER=openai-compatible
+# PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL=http://bifrost:8081/v1
 
 make run
 # listening on :8080

@@ -11,14 +11,15 @@ OpenClaw → PromptShield (:8080) → Anthropic / OpenAI / Gemini
 
 ## 1. Configure the gateway
 
-Set your provider and key in `.env`:
+In the combined product, configure provider credentials in Bifrost and point
+PromptShield at Bifrost:
 
 ```bash
-PROMPTSHIELD_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-api03-xxxx
+PROMPTSHIELD_PROVIDER=openai-compatible
+PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL=http://bifrost:8081/v1
 ```
 
-For multi-provider routing, see [Providers](/docs/providers).
+For provider routing, see [Providers](/docs/providers).
 
 Then start the gateway:
 
