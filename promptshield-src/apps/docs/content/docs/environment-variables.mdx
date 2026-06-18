@@ -3,7 +3,9 @@ title: Environment Variables
 description: Every environment variable across the gateway, detection engine, and dashboard, with cross-service connection notes.
 ---
 
-This page covers all environment variables across all three PromptShield services.
+This page covers environment variables across the combined PromptShield + Bifrost
+gateway. Provider credentials and model routing belong to Bifrost; PromptShield
+should forward allowed traffic to Bifrost through an OpenAI-compatible upstream.
 
 ## Shared secrets
 
@@ -28,9 +30,8 @@ The engine API key has three different variable names — one per service — be
 | Variable | Default | Description |
 |---|---|---|
 | `PROMPTSHIELD_PORT` | `8080` | Port the gateway listens on |
-| `PROMPTSHIELD_PROVIDER` | `gemini` | Upstream provider: `gemini` \| `openai` \| `anthropic` \| `openai-compatible` \| `selfhosted` |
-| `PROMPTSHIELD_PROVIDERS` | — | Comma-separated list for multi-provider routing, e.g. `anthropic,openai,gemini`. First entry is the fallback. |
-| `PROMPTSHIELD_UPSTREAM_URL` | provider default | Override the upstream base URL (single-provider mode only) |
+| `PROMPTSHIELD_PROVIDER` | `openai-compatible` | Must remain `openai-compatible` in the combined product so PromptShield forwards allowed requests to Bifrost |
+| `PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL` | `http://bifrost:8081/v1` | Internal Bifrost `/v1` upstream used after PromptShield allows a request |
 | `PROMPTSHIELD_CHAT_ROUTE` | `/v1/chat/completions` | Inbound route path |
 | `PROMPTSHIELD_POLICY_PATH` | `config/policy.yaml` | Path to the policy YAML file |
 | `PROMPTSHIELD_ALLOW_DEFAULT_POLICY` | `false` | Allow startup with a default allow-all policy when the policy file is missing. **Unsafe in production.** |
@@ -42,41 +43,11 @@ The engine API key has three different variable names — one per service — be
 | `PROMPTSHIELD_ENGINE_URL` | `none` | Detection engine URL (e.g. `http://localhost:4321`). `none` = gateway mode, no scanning. |
 | `PROMPTSHIELD_ENGINE_API_KEY` | — | Bearer token sent to the engine. Must match `PROMPTSHIELD_API_KEY` in the engine. Required when `PROMPTSHIELD_ALLOW_UNAUTH=false` on the engine (the default). |
 
-### API keys
+### Provider control plane
 
-| Variable | Description |
-|---|---|
-| `PROMPTSHIELD_UPSTREAM_API_KEY` | Global key fallback (single-provider mode) |
-| `GEMINI_API_KEY` | Gemini API key |
-| `OPENAI_API_KEY` | OpenAI API key |
-| `ANTHROPIC_API_KEY` | Anthropic API key |
-| `SELFHOSTED_API_KEY` | Optional key for self-hosted endpoints |
-
-Multiple keys are supported via comma-separated values — the gateway rotates through them in round-robin order.
-
-### Model selection
-
-No default model. Set one via env var or pass `model` in every request.
-
-| Variable | Description |
-|---|---|
-| `PROMPTSHIELD_MODEL` | Global override — takes priority over all per-provider model vars |
-| `PROMPTSHIELD_GEMINI_MODEL` | Model for `gemini` |
-| `PROMPTSHIELD_OPENAI_MODEL` | Model for `openai` |
-| `PROMPTSHIELD_ANTHROPIC_MODEL` | Model for `anthropic` |
-| `PROMPTSHIELD_SELFHOSTED_MODEL` | Model for `selfhosted` |
-| `PROMPTSHIELD_OPENAI_COMPATIBLE_MODEL` | Model for `openai-compatible` |
-
-### Multi-provider routing
-
-| Variable | Description |
-|---|---|
-| `PROMPTSHIELD_MODEL_ROUTES` | Custom model-to-provider routing, e.g. `llama3=selfhosted,mistral=openai-compatible` |
-| `PROMPTSHIELD_GEMINI_UPSTREAM_URL` | Override Gemini base URL |
-| `PROMPTSHIELD_OPENAI_UPSTREAM_URL` | Override OpenAI base URL |
-| `PROMPTSHIELD_ANTHROPIC_UPSTREAM_URL` | Override Anthropic base URL |
-| `PROMPTSHIELD_SELFHOSTED_UPSTREAM_URL` | Self-hosted endpoint URL |
-| `PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL` | OpenAI-compatible endpoint URL |
+Provider API keys, model selection, model routes, provider fallback, and key
+pools are Bifrost configuration. Do not add provider secrets to PromptShield
+environment files in the combined product.
 
 ### Admin API
 
@@ -84,11 +55,11 @@ No default model. Set one via env var or pass `model` in every request.
 |---|---|---|
 | `PROMPTSHIELD_ADMIN_TOKEN` | — | Authenticates `/admin/config` and `/admin/policy` requests. Must match `GATEWAY_ADMIN_TOKEN` in the dashboard. Use a strong random value in production. |
 
-### Audit log (standalone mode)
+### Audit log forwarding
 
 | Variable | Default | Description |
 |---|---|---|
-| `PROMPTSHIELD_AUDIT_URL` | — | Dashboard server URL for direct audit push, e.g. `http://localhost:3000`. Leave unset when using docker-compose (log-fwd handles audit forwarding). |
+| `PROMPTSHIELD_AUDIT_URL` | — | Optional internal dashboard URL for direct audit push. Leave unset in the production Compose product; `log-fwd` handles audit forwarding. |
 | `AUDIT_INGEST_SECRET` | — | Shared secret for the audit ingest endpoint. Required when `PROMPTSHIELD_AUDIT_URL` is set. Must match `AUDIT_INGEST_SECRET` in the dashboard. |
 
 ### Security and metrics
@@ -134,7 +105,8 @@ Set both or neither. Setting one without the other is a startup error.
 | `CORS_ORIGIN` | `http://localhost:8000` | Yes | Allowed CORS origin (the web app URL) |
 | `ENGINE_URL` | `http://localhost:4321` | No | Detection engine base URL |
 | `ENGINE_API_KEY` | — | No* | Bearer token for engine requests. *Required when `PROMPTSHIELD_ALLOW_UNAUTH=false` on the engine (the default). Must match `PROMPTSHIELD_API_KEY` in the engine. |
-| `GATEWAY_URL` | `http://localhost:8080` | No | Gateway base URL for health checks and admin calls |
+| `GATEWAY_URL` | `http://localhost:8080` | No | Gateway base URL for dashboard health checks and admin calls. Compose overrides this to the internal gateway address. |
+| `BIFROST_URL` | `http://bifrost:8081` | No | Bifrost router base URL for dashboard status checks |
 | `GATEWAY_ADMIN_TOKEN` | — | No | Token for gateway admin API calls. Must match `PROMPTSHIELD_ADMIN_TOKEN` on the gateway. |
 | `GATEWAY_CONFIG_SOURCE` | `local_env` | No | `local_env` reads from `GATEWAY_ENV_PATH`; `gateway_api` calls the gateway admin API |
 | `GATEWAY_CONFIG_ENDPOINT` | `/admin/config` | No | Gateway admin config endpoint path |
@@ -176,6 +148,7 @@ When running with docker-compose, the following variables are set automatically 
 | `ENGINE_URL` | `http://promptshield-engine:4321` | Container-network address |
 | `ENGINE_API_KEY` | `${ENGINE_API_KEY:?set in .env.local}` | Required. Compose fails fast if missing. Must match engine `PROMPTSHIELD_API_KEY`. |
 | `GATEWAY_URL` | `http://promptshield-gateway:8080` | Container-network address |
+| `BIFROST_URL` | `http://bifrost:8081` | Container-network router status address |
 | `VITE_SERVER_URL` | `http://localhost:3000` | Browser-facing; stays as localhost |
 | `AUDIT_SERVER_URL` | `http://ps-server:3000` | Docker-network dashboard address for the log-fwd sidecar |
 | `GATEWAY_LOG_SOURCE` | `docker` | Docker mode tails the gateway container logs |
@@ -201,7 +174,8 @@ When running with docker-compose, the following variables are set automatically 
 
 **Cause:** `PROMPTSHIELD_ENGINE_API_KEY` is missing from the gateway environment.
 
-**Fix:** Add `PROMPTSHIELD_ENGINE_API_KEY=<value>` to `promptshield-gateway/.env`. Value must equal `PROMPTSHIELD_API_KEY` on the engine.
+**Fix:** Set `PROMPTSHIELD_ENGINE_API_KEY=<value>` in the root product `.env`.
+Compose passes the same value to the gateway, dashboard, and engine.
 
 ---
 
@@ -211,7 +185,7 @@ When running with docker-compose, the following variables are set automatically 
 
 **Cause:** `GATEWAY_ADMIN_TOKEN` (dashboard) does not match `PROMPTSHIELD_ADMIN_TOKEN` (gateway).
 
-**Fix:** Ensure both carry the same value. For docker-compose dev, set `GATEWAY_ADMIN_TOKEN=dev-gateway-admin-token` in `promptshield/.env.local` and `PROMPTSHIELD_ADMIN_TOKEN=dev-gateway-admin-token` in `promptshield-gateway/.env.local`.
+**Fix:** Ensure both carry the same value through the root product `.env`.
 
 ---
 
@@ -223,4 +197,5 @@ When running with docker-compose, the following variables are set automatically 
 
 **Docker Compose fix:** Confirm the `log-fwd` service is running (`docker compose --profile logs up`). Check that `AUDIT_INGEST_SECRET` in `promptshield/.env.local` matches the value passed to the log-fwd container (both default to `dev-ingest-secret`).
 
-**Standalone fix:** Set `PROMPTSHIELD_AUDIT_URL=http://localhost:3000` and `AUDIT_INGEST_SECRET=<value>` in `promptshield-gateway/.env`. The secret must match `AUDIT_INGEST_SECRET` in the dashboard.
+**Direct-push fix:** Set an internal dashboard URL for `PROMPTSHIELD_AUDIT_URL`
+and use the same `AUDIT_INGEST_SECRET` value as the dashboard.

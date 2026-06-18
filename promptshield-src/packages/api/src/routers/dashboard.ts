@@ -41,6 +41,18 @@ function scopedAuditCondition(userId: string, includeUnkeyed: boolean) {
   return includeUnkeyed ? or(owned, isNull(auditEvents.keyId)) : owned;
 }
 
+async function serviceStatus(baseUrl: string) {
+  const start = Date.now();
+  try {
+    const res = await fetch(new URL("/health", baseUrl).toString(), {
+      signal: AbortSignal.timeout(3000),
+    });
+    return { online: res.ok, latencyMs: Date.now() - start, url: baseUrl };
+  } catch {
+    return { online: false, latencyMs: null, url: baseUrl };
+  }
+}
+
 export const dashboardRouter = router({
   stats: protectedProcedure
     .input(dateRangeInput)
@@ -229,26 +241,14 @@ export const dashboardRouter = router({
     }),
 
   engineStatus: protectedProcedure.query(async () => {
-    const start = Date.now();
-    try {
-      const res = await fetch(`${env.ENGINE_URL}/health`, {
-        signal: AbortSignal.timeout(3000),
-      });
-      return { online: res.ok, latencyMs: Date.now() - start };
-    } catch {
-      return { online: false, latencyMs: null };
-    }
+    return serviceStatus(env.ENGINE_URL);
   }),
 
   gatewayStatus: protectedProcedure.query(async () => {
-    const start = Date.now();
-    try {
-      const res = await fetch(`${env.GATEWAY_URL}/health`, {
-        signal: AbortSignal.timeout(3000),
-      });
-      return { online: res.ok, latencyMs: Date.now() - start };
-    } catch {
-      return { online: false, latencyMs: null };
-    }
+    return serviceStatus(env.GATEWAY_URL);
+  }),
+
+  bifrostStatus: protectedProcedure.query(async () => {
+    return serviceStatus(env.BIFROST_URL);
   }),
 });

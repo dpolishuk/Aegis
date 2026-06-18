@@ -9,7 +9,9 @@
       "default": "./src/*.ts"
     }
   },
-  "scripts": {},
+  "scripts": {
+    "check-types": "tsc -p tsconfig.json --noEmit"
+  },
   "dependencies": {
     "@promptshield/auth": "workspace:*",
     "@promptshield/db": "workspace:*",

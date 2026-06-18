@@ -1,118 +1,82 @@
 ---
 title: Gateway
-description: Setup guide for the PromptShield gateway.
+description: PromptShield's inline gateway role in the combined product.
 ---
 
-The gateway is a single Go binary. It handles provider routing, API key management, rate limiting, token budgets, audit logging, and Prometheus metrics. Connect the detection engine to add scanning and policy enforcement.
+In the combined PromptShield + Bifrost product, Nginx is the only public entry
+point. Public `/v1/*` traffic goes through PromptShield first for policy,
+rate limits, token budgets, audit logging, and metrics, then continues to
+Bifrost for provider routing.
 
-## Requirements
-
-- Go 1.22+ (build from source) or download a pre-built release
-
-## Install
-
-**From source:**
-
-```bash
-git clone https://github.com/promptshieldhq/promptshield-gateway
-cd promptshield-gateway
+```text
+Client -> Nginx /v1 -> PromptShield Gateway -> Bifrost /v1 -> LLM provider
 ```
 
-**Download a release:**
+Bifrost owns provider credentials, key pools, fallback order, model routing, and
+router governance. PromptShield remains inline before provider routing and does
+not expose a separate public inference endpoint.
 
-Grab the binary for your platform from [releases](https://github.com/promptshieldhq/promptshield-gateway/releases).
+## Product setup
 
-## Configure
+Run the full product stack from the repository root:
 
 ```bash
 cp .env.example .env
+docker compose up -d --build
 ```
 
-Minimum required:
-
-```bash
-PROMPTSHIELD_PROVIDER=gemini   # gemini | openai | anthropic | openai-compatible | selfhosted
-GEMINI_API_KEY=your-key        # key for your chosen provider
-```
-
-See [Environment Variables](/docs/environment-variables) for the full list.
-
-## Run
-
-**From source:**
-
-```bash
-make run
-# listening on :8080
-```
-
-**From release binary:**
-
-```bash
-./promptshield-gateway
-# listening on :8080
-```
-
-## Verify
-
-```bash
-curl -s http://localhost:8080/health
-# {"status":"ok","service":"promptshield-gateway"}
-```
-
-## Connect your app
-
-Change `base_url` in your SDK. No other code changes needed.
+The PromptShield Gateway service listens only on the Compose network. Public
+clients use the product gateway:
 
 ```python
-client = OpenAI(base_url="http://localhost:8080/v1", api_key="sk-...")
+client = OpenAI(base_url="http://localhost/v1", api_key="local")
 ```
 
 ## Modes
 
-**Gateway mode** (default) — no engine needed. Rate limiting, token budgets, API key rotation, audit logging, and Prometheus metrics work out of the box.
+**Security mode** scans requests with the detection engine before they reach
+Bifrost.
+
+```bash
+PROMPTSHIELD_ENGINE_URL=http://promptshield-engine:4321
+PROMPTSHIELD_ENGINE_API_KEY=<engine-shared-secret>
+```
+
+**Gateway mode** keeps PromptShield inline for gateway controls without
+detection-engine scanning.
 
 ```bash
 PROMPTSHIELD_ENGINE_URL=none
 ```
 
-**Security mode** — full PII and secrets scanning on every request.
+## Provider keys and routing
+
+Configure provider credentials, key pools, fallback order, and model routing in
+Bifrost through `http://localhost/bifrost/` from an allowed admin network. Keep
+PromptShield configured as an OpenAI-compatible upstream to Bifrost:
 
 ```bash
-PROMPTSHIELD_ENGINE_URL=http://localhost:4321
-PROMPTSHIELD_ENGINE_API_KEY=your-engine-key
+PROMPTSHIELD_PROVIDER=openai-compatible
+PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL=http://bifrost:8081/v1
 ```
 
-See [Engine](/docs/engine) for setup.
+## Policy hot reload
 
-## API key vault
-
-Configure key pools per provider using comma-separated values. The gateway round-robins across them — your app sends a placeholder, the real keys never leave the gateway.
+The gateway watches the policy file and reloads changes atomically. If a reload
+fails, the previous policy stays active.
 
 ```bash
-OPENAI_API_KEY=key1,key2,key3
-ANTHROPIC_API_KEY=key1,key2
-GEMINI_API_KEY=key1
+PROMPTSHIELD_POLICY_PATH=/policy/policy.yaml
 ```
 
-Key resolution order per request:
-1. `x-llm-api-key` or provider-specific header from request
-2. Configured key pool (round-robin)
-3. `Authorization: Bearer` passthrough
-
-## Policy hot-reload
-
-The gateway watches the policy file for changes and reloads atomically — no restart required, no requests dropped. If a reload fails, the previous policy stays active.
-
-```bash
-PROMPTSHIELD_POLICY_PATH=config/policy.yaml  # default
-```
-
-You can also update policy at runtime via the [Admin API](#admin-api) without touching the file.
+Dashboard policy controls and the authenticated internal admin API update
+PromptShield policy and security settings only. Provider/routing changes belong
+in Bifrost.
 
 ## Streaming
 
-Full SSE streaming is supported. Token usage is extracted from stream chunks and counted against budgets. Response scanning is skipped on streaming responses.
+SSE streaming is supported. Token usage is extracted from stream chunks and
+counted against budgets. Response scanning is skipped on streaming responses.
 
 ```python
 with client.chat.completions.stream(
@@ -122,54 +86,3 @@ with client.chat.completions.stream(
     for chunk in stream:
         print(chunk.choices[0].delta.content or "", end="", flush=True)
 ```
-
-## Admin API
-
-Four authenticated endpoints for runtime configuration without restarts.
-
-**Requires:**
-
-```bash
-GATEWAY_ADMIN_TOKEN=your-secret-token
-```
-
-### Get current config
-
-```bash
-curl -H "Authorization: Bearer YOUR_TOKEN" \
-  http://localhost:8080/admin/config
-```
-
-### Update configuration
-
-```bash
-curl -X PUT -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "mode": "security",
-    "engineUrl": "http://localhost:4321",
-    "providerMode": "single",
-    "provider": "openai"
-  }' \
-  http://localhost:8080/admin/config
-```
-
-Changes persist to disk.
-
-### Get policy
-
-```bash
-curl -H "Authorization: Bearer YOUR_TOKEN" \
-  http://localhost:8080/admin/policy
-```
-
-### Update policy
-
-```bash
-curl -X PUT -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/yaml" \
-  --data-binary @config/policy.yaml \
-  http://localhost:8080/admin/policy
-```
-
-Policy reloads immediately in-memory. No restart needed.

@@ -47,11 +47,10 @@ services:
       PROMPTSHIELD_ENGINE_URL: ${PROMPTSHIELD_ENGINE_URL:-http://promptshield-engine:4321}
       PROMPTSHIELD_ENGINE_API_KEY: ${PROMPTSHIELD_ENGINE_API_KEY}
       PROMPTSHIELD_POLICY_PATH: ${PROMPTSHIELD_POLICY_PATH:-/policy/policy.yaml}
-      PROMPTSHIELD_MODEL_ROUTES: ${PROMPTSHIELD_MODEL_ROUTES:-}
     volumes:
       - ./policy.yaml:/policy/policy.yaml:ro
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
       interval: 15s
@@ -84,8 +83,8 @@ services:
       PROMPTSHIELD_API_KEY: ${PROMPTSHIELD_ENGINE_API_KEY}
       PROMPTSHIELD_ALLOW_UNAUTH: "false"
       PROMPTSHIELD_LOG_LEVEL: ${PROMPTSHIELD_LOG_LEVEL:-INFO}
-    ports:
-      - "4321:4321"
+    expose:
+      - "4321"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:4321/ready')\" || exit 1"]
       interval: 10s
@@ -133,15 +132,16 @@ services:
       ENGINE_URL: ${ENGINE_URL:-http://promptshield-engine:4321}
       ENGINE_API_KEY: ${ENGINE_API_KEY:-${PROMPTSHIELD_ENGINE_API_KEY}}
       GATEWAY_URL: http://promptshield-gateway:8080
+      BIFROST_URL: http://bifrost:8081
       POLICY_FILE_PATH: /policy/policy.yaml
       GATEWAY_ENV_PATH: /policy/gateway.env
       AUDIT_INGEST_SECRET: ${AUDIT_INGEST_SECRET}
-      CONFIG_ADMIN_EMAILS: ${CONFIG_ADMIN_EMAILS:-admin@admin.com}
+      CONFIG_ADMIN_EMAILS: ${CONFIG_ADMIN_EMAILS:-}
     volumes:
       - ./policy.yaml:/policy/policy.yaml
       - ./gateway.env:/policy/gateway.env
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
       interval: 15s
@@ -173,8 +173,8 @@ services:
     environment:
       VITE_SERVER_URL: ${VITE_SERVER_URL:-http://${NGINX_HOST:-localhost}}
       SSR_SERVER_URL: http://dashboard:3000
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     depends_on:
       dashboard:
         condition: service_healthy
@@ -224,7 +224,8 @@ services:
 
   # ─── Bifrost (AI Gateway / Router) ────────────────────────
   bifrost:
-    image: maximhq/bifrost:latest
+    # Digest-pinned image; refresh intentionally after reviewing release notes.
+    image: maximhq/bifrost@sha256:240634280b374bf0fae11e888f5f9238bf30a2c323a75d905059902fea2c7a5d
     container_name: filter-bifrost
     restart: unless-stopped
     # Run as root so the entrypoint can fix /app/data ownership and the app can
@@ -237,12 +238,12 @@ services:
       APP_PORT: "8081"
       APP_HOST: "0.0.0.0"
       LOG_LEVEL: ${BIFROST_LOG_LEVEL:-info}
-    ports:
-      - "8081:8081"
+    expose:
+      - "8081"
     volumes:
       # Use a named volume to avoid host UID/GID permission issues (especially
-      # with rootless Docker / Lima). Pre-seed providers via Bifrost UI on :8081
-      # or by copying config.json into the volume after first start.
+      # with rootless Docker / Lima). Pre-seed providers via the admin-only
+      # /bifrost/ UI or by copying config.json into the volume after first start.
       - bifrost_data:/app/data
     networks:
       - filter
@@ -255,3 +256,7 @@ volumes:
 networks:
   filter:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1

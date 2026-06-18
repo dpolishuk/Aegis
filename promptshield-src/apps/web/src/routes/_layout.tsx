@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router";
 import {
   LayoutDashboard,
+  Network,
   ScrollText,
   Settings,
   ShieldCheck,
@@ -40,6 +41,7 @@ type NavItem = {
   label: string;
   cmd: string;
   icon: ElementType;
+  external?: boolean;
   soon?: boolean;
 };
 
@@ -66,6 +68,13 @@ const navSections: { label: string; items: NavItem[] }[] = [
     label: "system",
     items: [
       {
+        to: "/bifrost/",
+        label: "router admin",
+        cmd: "router",
+        icon: Network,
+        external: true,
+      },
+      {
         to: "/config",
         label: "config",
         cmd: "config",
@@ -76,7 +85,7 @@ const navSections: { label: string; items: NavItem[] }[] = [
 ];
 
 function NavLink({ item }: { item: NavItem }) {
-  const { to, label, icon: Icon, soon } = item;
+  const { to, label, icon: Icon, external, soon } = item;
 
   if (soon) {
     return (
@@ -87,6 +96,22 @@ function NavLink({ item }: { item: NavItem }) {
           soon
         </span>
       </div>
+    );
+  }
+
+  if (external) {
+    return (
+      <a
+        href={to}
+        className="mono group flex items-center gap-2.5 rounded px-3 py-1.5 text-[12px] text-[var(--dev-text-dim)] border border-transparent transition-colors hover:bg-[var(--dev-panel)] hover:text-[var(--dev-text)]"
+      >
+        <Icon
+          size={12}
+          className="shrink-0 text-[var(--dev-text-mute)]"
+          aria-hidden="true"
+        />
+        <span className="truncate">{label}</span>
+      </a>
     );
   }
 

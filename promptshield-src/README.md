@@ -22,9 +22,9 @@ PromptShield is an open source LLM security platform. It places a gateway in fro
 
 Components:
 
-- **Gateway**: policy enforcement, multi-provider routing, rate limiting, token budgets, audit logging
+- **Gateway**: policy enforcement before Bifrost, rate limiting, token budgets, audit logging
 - **Detection Engine**: PII scanning and injection detection
-- **Dashboard**: policy editor, audit log, key management, metrics
+- **Dashboard**: policy editor, audit log, Bifrost router status, application key management, metrics
 
 
 > **Note:** Only the gateway is required. The detection engine and dashboard are optional. Gateway-only mode includes built-in secret detection (150+ Gitleaks rules), rate limiting, token budgets, and audit logging. Add the engine for PII and injection detection.
@@ -54,7 +54,8 @@ git clone https://github.com/promptshieldhq/promptshield-engine
 ```bash
 cd promptshield
 cp .env.local.example .env.local
-# fill in BETTER_AUTH_SECRET and your provider API key
+# fill in BETTER_AUTH_SECRET
+# provider API keys are configured in Bifrost for the combined product
 
 docker compose -f docker-compose.dev.yml up --build
 ```
@@ -73,27 +74,27 @@ docker compose -f docker-compose.dev.yml up --build
 ```bash
 cd promptshield-gateway
 cp .env.example .env.local
-# set PROMPTSHIELD_PROVIDER and your LLM provider API key
+# set PROMPTSHIELD_PROVIDER=openai-compatible
+# set PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL=http://bifrost:8081/v1
 
 docker compose -f docker-compose.dev.yml up --build
 ```
 
 | Service | URL |
 |---|---|
-| Dashboard | http://localhost:8000 |
-| API server | http://localhost:3000 |
-| Gateway | http://localhost:8080 |
+| Product gateway | http://localhost |
+| Dashboard | http://localhost |
 | Engine | http://localhost:4321 |
 | Docs | http://localhost:4000 |
 
-Point your app at `http://localhost:8080/v1`. The API is OpenAI-compatible.
+Point your app at `http://localhost/v1`. The API is OpenAI-compatible.
 
 ```bash
 # verify the gateway is up
-curl http://localhost:8080/health
+curl http://localhost/health
 
 # send a prompt with PII; behavior depends on policy (block or mask)
-curl -s -X POST http://localhost:8080/v1/chat/completions \
+curl -s -X POST http://localhost/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4o",
@@ -112,7 +113,7 @@ uv run python main.py   # → :4321
 # 2. Gateway
 cd promptshield-gateway
 cp .env.example .env
-make run   # → :8080
+# In production, run behind the product Nginx entry point.
 
 # 3. Dashboard
 cd promptshield
@@ -121,8 +122,8 @@ cp apps/server/.env.example apps/server/.env
 cp apps/web/.env.example apps/web/.env
 cd packages/db && bunx drizzle-kit migrate && cd ../..
 bun run dev:server   # → :3000
-bun run dev:web      # → :8000
-bun run dev:docs     # → :4000
+bun run dev:web
+bun run dev:docs
 ```
 
 ---
@@ -223,26 +224,11 @@ response_scan:
   enabled: true
 ```
 
-**Multi-provider routing**
+**Provider routing**
 
-Routes to OpenAI, Anthropic, Gemini, self-hosted, or any OpenAI-compatible endpoint. In multi-provider mode, routing is automatic by model name prefix — no config needed:
-
-- `gpt-*`, `o1`, `o3`, `o4`, `chatgpt-*` → OpenAI
-- `claude-*` → Anthropic
-- `gemini-*` → Gemini
-
-Custom routes override the defaults via `PROMPTSHIELD_MODEL_ROUTES`.
-
-**API key vault**
-
-Configure key pools per provider (comma-separated). The gateway round-robins across them — clients never see the real keys.
-
-```sh
-OPENAI_API_KEY=key1,key2,key3
-ANTHROPIC_API_KEY=key1,key2
-```
-
-Key resolution order per request: request header → key pool → bearer passthrough.
+In the combined product, PromptShield forwards allowed OpenAI-compatible traffic
+to Bifrost. Bifrost owns provider credentials, provider fallback, model routing,
+and key pools.
 
 **Streaming**
 

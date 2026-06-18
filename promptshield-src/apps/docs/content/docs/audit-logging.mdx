@@ -47,14 +47,12 @@ No PII or secrets appear in the log. `entities_detected` contains type names onl
 
 ## Forwarding logs
 
-PromptShield writes to stdout. Pipe it anywhere:
+PromptShield writes audit events to stdout. In the production Compose product,
+the `log-fwd` sidecar tails the gateway container and posts events to the
+dashboard ingest endpoint.
 
 ```bash
-
-# File
-./bin/promptshield >> /var/log/promptshield/audit.ndjson
+docker compose logs -f promptshield-gateway
 ```
 
-In production the systemd service captures stdout automatically. Use `journalctl -u promptshield -f` to tail it live.
-
-The [Dashboard](/docs/dashboard) will add a searchable UI over the audit log when it ships. Until then, pipe stdout to a file or your log aggregator.
+The [Dashboard](/docs/dashboard) provides the searchable audit view.

@@ -1,120 +1,58 @@
 ---
 title: Dashboard
-description: Web UI for managing PromptShield — policy editor, audit log, gateway config, and API keys.
+description: Unified admin UI for PromptShield policy, audit, gateway security config, and Bifrost router status.
 ---
 
-
-The PromptShield dashboard is a self-hosted web app for managing the gateway and engine without touching config files directly.
+The dashboard is part of the combined gateway product. It manages PromptShield
+security policy, audit visibility, gateway/engine health, and links operators to
+Bifrost for provider routing and provider API keys.
 
 <figure>
 	<img src="/images/dashboard/dashboard.png" alt="PromptShield dashboard overview showing threat rate, recent blocks, and entity distribution" />
 </figure>
 
+## What It Does
 
-**What it does:**
+- Edit `policy.yaml`; changes hot-reload into the gateway.
+- Browse blocked requests and detected entity types.
+- Configure PromptShield security settings such as engine URL, gateway route,
+  and policy path.
+- Open Bifrost for provider credentials, model routing, key pools, fallback, and
+  router governance.
+- View gateway, detection engine, and router health.
 
-- Edit `policy.yaml` visually or as raw YAML; changes hot-reload into the gateway
-- Browse and filter the audit log (blocked requests, detected entity types)
-- Manage API keys and assign per-key policies
-- Configure gateway and engine URLs, provider settings, and API keys
-- View live gateway and engine health
+Provider credentials and model routing are not configured in PromptShield. They
+belong to Bifrost.
 
-## Requirements
+## Run
 
-- Runtime option: Docker + Docker Compose, or Bun + PostgreSQL (plain host setup, no Docker)
-- The gateway and engine stacks running (optional; dashboard works standalone)
-
-## Setup
-
-**1. Clone the dashboard repo:**
-
-```bash
-git clone https://github.com/promptshieldhq/promptshield
-cd promptshield
-```
-
-**2. Copy and fill in the env file:**
+Start the full product from the repository root:
 
 ```bash
-cp .env.local.example .env.local
+docker compose up -d --build
 ```
 
-Minimum required in `.env.local`:
+The dashboard is available through the product gateway at `http://localhost/`.
+Its API and web services are internal Compose services behind Nginx.
+
+## Admin Access
+
+Dashboard config mutations require a signed-in user whose email is listed in
+`CONFIG_ADMIN_EMAILS`.
 
 ```bash
-BETTER_AUTH_SECRET=change-me-at-least-32-characters-long  # any 32+ char string
-POSTGRES_PASSWORD=password
+CONFIG_ADMIN_EMAILS=admin@yourcompany.com
 ```
 
-**3. Start:**
+There is no default config-admin email. Set this explicitly for production.
+
+## Policy File Path
+
+The dashboard reads and writes the mounted product policy file:
 
 ```bash
-docker compose -f docker-compose.dev.yml up --build
+POLICY_FILE_PATH=/policy/policy.yaml
 ```
 
-This starts PostgreSQL, runs DB migrations, seeds the policy volume, and starts the API server, web frontend, and docs.
-
-## Services
-
-| Service    | Address                 | Description      |
-| ---------- | ----------------------- | ---------------- |
-| Web UI     | `http://localhost:8000` | Dashboard        |
-| API server | `http://localhost:3000` | Backend |
-| Docs       | `http://localhost:4000` | This site        |
-
-## Connecting to the gateway and engine
-
-Start the engine and gateway stacks first:
-
-```bash
-cd promptshield-engine && docker compose -f docker-compose.dev.yml up -d
-cd promptshield-gateway  && docker compose -f docker-compose.dev.yml up -d
-```
-
-All three stacks share the `promptshield` Docker network. The dashboard server reaches the gateway at `promptshield-gateway:8080` and the engine at `promptshield-engine:4321` automatically.
-
-## Plain on-prem setup (no Docker)
-
-Run each service directly with Bun:
-
-```bash
-# Install deps
-bun install
-
-# Run DB migrations (once)
-cd packages/db && bunx drizzle-kit migrate
-
-# API server (port 3000)
-cd apps/server && bun run --hot src/index.ts
-
-# Web frontend (port 8000)
-cd apps/web && bun run dev
-
-# Docs (port 4000, optional)
-cd apps/docs && bun run dev --port 4000
-```
-
-Copy `apps/server/.env.example` to `apps/server/.env` and `apps/web/.env.example` to `apps/web/.env` before starting.
-
-Set these values in `apps/server/.env` for external gateway/engine connectivity:
-
-```bash
-ENGINE_URL=http://<engine-host>:4321
-ENGINE_API_KEY=<engine-api-key>
-GATEWAY_URL=http://<gateway-host>:8080
-GATEWAY_ADMIN_TOKEN=<gateway-admin-token>
-AUDIT_SERVER_URL=http://localhost:3000
-GATEWAY_LOG_SOURCE=file
-GATEWAY_LOG_FILE=../../gateway-logs/promptshield.log
-```
-
-If your gateway pushes audit events directly, set this in `promptshield-gateway/.env`:
-
-```bash
-PROMPTSHIELD_AUDIT_URL=http://<dashboard-host>:3000
-AUDIT_INGEST_SECRET=<shared-secret>
-```
-
-## Policy file path
-
-The dashboard reads and writes `policy.yaml` at a configurable path. In Docker it defaults to `/policy/policy.yaml` (the shared `promptshield_policy` volume). Go to **Config → Policy File** to validate or change the path.
+Use [Deployment](/docs/deployment) for the production startup and verification
+flow.

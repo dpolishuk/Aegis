@@ -3,27 +3,28 @@ title: OpenClaw
 description: Run PromptShield as the gateway between OpenClaw and your LLM provider.
 ---
 
-OpenClaw supports custom providers via `openclaw.json`. Point it at PromptShield and every request gets scanned, rate limited, and logged before it reaches the LLM.
+OpenClaw supports custom providers via `openclaw.json`. Point it at the product
+gateway and every request gets scanned, rate limited, and logged before Bifrost
+routes it to a provider.
 
 ```
-OpenClaw → PromptShield (:8080) → Anthropic / OpenAI / Gemini
+OpenClaw -> Product /v1 -> PromptShield -> Bifrost -> LLM provider
 ```
 
-## 1. Configure the gateway
+## 1. Configure the product
 
-Set your provider and key in `.env`:
+In the combined product, configure provider credentials in Bifrost and point
+PromptShield at Bifrost:
 
 ```bash
-PROMPTSHIELD_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-api03-xxxx
+PROMPTSHIELD_PROVIDER=openai-compatible
+PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL=http://bifrost:8081/v1
 ```
 
-For multi-provider routing, see [Providers](/docs/providers).
-
-Then start the gateway:
+Start the product from the repository root:
 
 ```bash
-make run
+docker compose up -d --build
 ```
 
 ## 2. Configure OpenClaw
@@ -35,7 +36,7 @@ Edit `~/.openclaw/openclaw.json`:
   "models": {
     "providers": {
       "promptshield": {
-        "baseUrl": "http://localhost:8080/v1",
+        "baseUrl": "http://localhost/v1",
         "apiKey": "local",
         "api": "openai-completions"
       }
@@ -51,4 +52,5 @@ Edit `~/.openclaw/openclaw.json`:
 }
 ```
 
-`apiKey` is a placeholder; the gateway holds the real upstream key. Copy from [`examples/openclaw.json`](https://github.com/promptshieldhq/promptshield-gateway/blob/main/examples/openclaw.json).
+`apiKey` is a placeholder for local client compatibility. Provider credentials
+are stored in Bifrost, not in OpenClaw or PromptShield.

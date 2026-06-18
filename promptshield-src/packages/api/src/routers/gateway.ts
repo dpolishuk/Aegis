@@ -17,42 +17,9 @@ import {
 
 /* .env file helpers */
 
-const providerEnum = z.enum([
-  "gemini",
-  "openai",
-  "anthropic",
-  "selfhosted",
-  "openai-compatible",
-]);
-
 const gatewayConfigInputSchema = z.object({
   mode: z.enum(["gateway", "security"]),
   engineUrl: z.string(),
-  providerMode: z.enum(["single", "multi"]),
-  provider: providerEnum,
-  upstreamUrl: z.string(),
-  providers: z.array(providerEnum),
-  providerUrls: z
-    .object({
-      gemini: z.string().optional(),
-      openai: z.string().optional(),
-      anthropic: z.string().optional(),
-      selfhosted: z.string().optional(),
-      "openai-compatible": z.string().optional(),
-    })
-    .optional(),
-  models: z
-    .object({
-      global: z.string(),
-      gemini: z.string(),
-      openai: z.string(),
-      anthropic: z.string(),
-      selfhosted: z.string(),
-    })
-    .optional(),
-  modelRoutes: z
-    .array(z.object({ model: z.string(), provider: providerEnum }))
-    .optional(),
   port: z.string().optional(),
   chatRoute: z.string().optional(),
   policyPath: z.string().optional(),
@@ -211,11 +178,18 @@ async function fetchGatewayConfig(): Promise<Record<string, unknown>> {
 async function updateGatewayConfigViaApi(input: z.infer<typeof gatewayConfigInputSchema>) {
   assertGatewayApiSecurity();
   const url = buildGatewayConfigUrl();
+  const securityConfig = {
+    mode: input.mode,
+    engineUrl: input.engineUrl,
+    port: input.port,
+    chatRoute: input.chatRoute,
+    policyPath: input.policyPath,
+  };
 
   const putRes = await fetch(url, {
     method: "PUT",
     headers: gatewayAdminHeaders("application/json"),
-    body: JSON.stringify(input),
+    body: JSON.stringify(securityConfig),
     signal: AbortSignal.timeout(5000),
   }).catch(() => null);
 
@@ -229,7 +203,7 @@ async function updateGatewayConfigViaApi(input: z.infer<typeof gatewayConfigInpu
   const postRes = await fetch(url, {
     method: "POST",
     headers: gatewayAdminHeaders("application/json"),
-    body: JSON.stringify(input),
+    body: JSON.stringify(securityConfig),
     signal: AbortSignal.timeout(5000),
   }).catch(() => null);
 
@@ -397,13 +371,6 @@ function updateEnvFile(
   }
 
   return [...updated, ...appended].join("\n");
-}
-
-function splitKeys(val: string | undefined): string[] {
-  return (val ?? "")
-    .split(",")
-    .map((k) => k.trim())
-    .filter(Boolean);
 }
 
 /* Router */
@@ -585,45 +552,31 @@ export const gatewayRouter = router({
     const e = parseEnvFile(content);
 
     const engineUrl = e.PROMPTSHIELD_ENGINE_URL ?? "none";
-    const multiProviders = splitKeys(e.PROMPTSHIELD_PROVIDERS);
 
     return {
       mode: engineUrl === "none" ? "gateway" : "security",
       engineUrl: engineUrl === "none" ? "" : engineUrl,
-      provider: (e.PROMPTSHIELD_PROVIDER ?? "gemini") as string,
-      upstreamUrl: e.PROMPTSHIELD_UPSTREAM_URL ?? "",
-      providerMode: (multiProviders.length > 0 ? "multi" : "single") as
-        | "single"
-        | "multi",
-      providers: multiProviders,
+      provider: "openai-compatible",
+      upstreamUrl: "",
+      providerMode: "single" as const,
+      providers: [],
       providerUrls: {
-        gemini: e.PROMPTSHIELD_GEMINI_UPSTREAM_URL ?? "",
-        openai: e.PROMPTSHIELD_OPENAI_UPSTREAM_URL ?? "",
-        anthropic: e.PROMPTSHIELD_ANTHROPIC_UPSTREAM_URL ?? "",
-        selfhosted: e.PROMPTSHIELD_SELFHOSTED_UPSTREAM_URL ?? "",
         "openai-compatible":
           e.PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL ?? "",
       },
       models: {
-        global: e.PROMPTSHIELD_MODEL ?? "",
-        gemini: e.PROMPTSHIELD_GEMINI_MODEL ?? "",
-        openai: e.PROMPTSHIELD_OPENAI_MODEL ?? "",
-        anthropic: e.PROMPTSHIELD_ANTHROPIC_MODEL ?? "",
-        selfhosted: e.PROMPTSHIELD_SELFHOSTED_MODEL ?? "",
+        global: "",
+        gemini: "",
+        openai: "",
+        anthropic: "",
+        selfhosted: "",
       },
-      modelRoutes: (e.PROMPTSHIELD_MODEL_ROUTES ?? "")
-        .split(",")
-        .map((r) => {
-          const [m, p] = r.split("=");
-          return m && p ? { model: m.trim(), provider: p.trim() } : null;
-        })
-        .filter(Boolean) as { model: string; provider: string }[],
-      // Return counts only — never expose raw key values
+      modelRoutes: [],
       keyCounts: {
-        upstream: splitKeys(e.PROMPTSHIELD_UPSTREAM_API_KEY).length,
-        gemini: splitKeys(e.GEMINI_API_KEY).length,
-        openai: splitKeys(e.OPENAI_API_KEY).length,
-        anthropic: splitKeys(e.ANTHROPIC_API_KEY).length,
+        upstream: 0,
+        gemini: 0,
+        openai: 0,
+        anthropic: 0,
       },
       port: e.PROMPTSHIELD_PORT ?? "8080",
       chatRoute: e.PROMPTSHIELD_CHAT_ROUTE ?? "/v1/chat/completions",
@@ -653,67 +606,6 @@ export const gatewayRouter = router({
         PROMPTSHIELD_ENGINE_URL: safeEngineUrl,
       };
 
-      if (input.providerMode === "single") {
-        updates.PROMPTSHIELD_PROVIDER = input.provider;
-        updates.PROMPTSHIELD_PROVIDERS = ""; // clear multi
-        if (input.upstreamUrl.trim()) {
-          updates.PROMPTSHIELD_UPSTREAM_URL = await validateSafeHttpUrl(
-            input.upstreamUrl,
-            "Upstream URL",
-          );
-        }
-      } else {
-        updates.PROMPTSHIELD_PROVIDERS = input.providers.join(",");
-        updates.PROMPTSHIELD_PROVIDER = ""; // clear single
-        const urls = input.providerUrls ?? {};
-        if (urls.gemini?.trim()) {
-          updates.PROMPTSHIELD_GEMINI_UPSTREAM_URL = await validateSafeHttpUrl(
-            urls.gemini,
-            "Gemini URL",
-          );
-        }
-        if (urls.openai?.trim()) {
-          updates.PROMPTSHIELD_OPENAI_UPSTREAM_URL = await validateSafeHttpUrl(
-            urls.openai,
-            "OpenAI URL",
-          );
-        }
-        if (urls.anthropic?.trim()) {
-          updates.PROMPTSHIELD_ANTHROPIC_UPSTREAM_URL =
-            await validateSafeHttpUrl(urls.anthropic, "Anthropic URL");
-        }
-        if (urls.selfhosted?.trim()) {
-          updates.PROMPTSHIELD_SELFHOSTED_UPSTREAM_URL =
-            await validateSafeHttpUrl(urls.selfhosted, "Self-hosted URL");
-        }
-        if (urls["openai-compatible"]?.trim()) {
-          updates.PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL =
-            await validateSafeHttpUrl(
-              urls["openai-compatible"],
-              "OpenAI-compatible URL",
-            );
-        }
-      }
-
-      if (input.models) {
-        if (input.models.global)
-          updates.PROMPTSHIELD_MODEL = input.models.global;
-        if (input.models.gemini)
-          updates.PROMPTSHIELD_GEMINI_MODEL = input.models.gemini;
-        if (input.models.openai)
-          updates.PROMPTSHIELD_OPENAI_MODEL = input.models.openai;
-        if (input.models.anthropic)
-          updates.PROMPTSHIELD_ANTHROPIC_MODEL = input.models.anthropic;
-        if (input.models.selfhosted)
-          updates.PROMPTSHIELD_SELFHOSTED_MODEL = input.models.selfhosted;
-      }
-
-      if (input.modelRoutes?.length) {
-        updates.PROMPTSHIELD_MODEL_ROUTES = input.modelRoutes
-          .map((r) => `${r.model}=${r.provider}`)
-          .join(",");
-      }
-
       if (input.port) updates.PROMPTSHIELD_PORT = input.port;
       if (input.chatRoute) updates.PROMPTSHIELD_CHAT_ROUTE = input.chatRoute;
       if (input.policyPath) updates.PROMPTSHIELD_POLICY_PATH = input.policyPath;
@@ -723,82 +615,6 @@ export const gatewayRouter = router({
       }
 
       const updated = updateEnvFile(content, updates);
-      await writeFile(env.GATEWAY_ENV_PATH, updated, "utf-8");
-      return { success: true };
-    }),
-
-  addApiKey: protectedProcedure
-    .input(
-      z.object({
-        provider: z.enum(["upstream", "gemini", "openai", "anthropic"]),
-        key: z.string().min(1),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      requireConfigAdmin(ctx.session, env.CONFIG_ADMIN_EMAILS);
-      if (getGatewayConfigSource() === "gateway_api") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            "API key editing is disabled in gateway_api mode. Manage keys via promptshield-gateway admin endpoint.",
-        });
-      }
-
-      if (input.key.includes(",")) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "API key cannot contain commas",
-        });
-      }
-      assertSafeEnvValue("API key", input.key);
-
-      const content = await readFile(env.GATEWAY_ENV_PATH, "utf-8").catch(
-        () => "",
-      );
-      const parsed = parseEnvFile(content);
-
-      const envKey: Record<string, string> = {
-        upstream: "PROMPTSHIELD_UPSTREAM_API_KEY",
-        gemini: "GEMINI_API_KEY",
-        openai: "OPENAI_API_KEY",
-        anthropic: "ANTHROPIC_API_KEY",
-      };
-
-      const k = envKey[input.provider]!;
-      const existing = splitKeys(parsed[k]);
-      const next = [...existing, input.key].join(",");
-      assertSafeEnvValue(k, next);
-      const updated = updateEnvFile(content, { [k]: next });
-      await writeFile(env.GATEWAY_ENV_PATH, updated, "utf-8");
-      return { count: existing.length + 1 };
-    }),
-
-  clearApiKeys: protectedProcedure
-    .input(
-      z.object({
-        provider: z.enum(["upstream", "gemini", "openai", "anthropic"]),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      requireConfigAdmin(ctx.session, env.CONFIG_ADMIN_EMAILS);
-      if (getGatewayConfigSource() === "gateway_api") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            "API key editing is disabled in gateway_api mode. Manage keys via promptshield-gateway admin endpoint.",
-        });
-      }
-
-      const content = await readFile(env.GATEWAY_ENV_PATH, "utf-8").catch(
-        () => "",
-      );
-      const envKey: Record<string, string> = {
-        upstream: "PROMPTSHIELD_UPSTREAM_API_KEY",
-        gemini: "GEMINI_API_KEY",
-        openai: "OPENAI_API_KEY",
-        anthropic: "ANTHROPIC_API_KEY",
-      };
-      const updated = updateEnvFile(content, { [envKey[input.provider]!]: "" });
       await writeFile(env.GATEWAY_ENV_PATH, updated, "utf-8");
       return { success: true };
     }),

@@ -14,6 +14,7 @@ export const env = createEnv({
     ENGINE_URL: z.string().url().default("http://localhost:4321"),
     ENGINE_API_KEY: z.string().min(1).optional(),
     GATEWAY_URL: z.string().url().default("http://localhost:8080"),
+    BIFROST_URL: z.string().url().default("http://bifrost:8081"),
     GATEWAY_CONFIG_SOURCE: z
       .enum(["local_env", "gateway_api"])
       .default("local_env"),

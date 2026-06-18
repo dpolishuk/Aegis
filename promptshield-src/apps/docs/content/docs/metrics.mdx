@@ -1,13 +1,10 @@
 ---
 title: Prometheus Metrics
-description: Built-in exporter on /metrics. Same port as the gateway. No extra process.
+description: Built-in exporter on /metrics for internal Prometheus scraping.
 ---
 
-Uses `prometheus/client_golang`. No flag to enable it.
-
-```bash
-curl http://localhost:8080/metrics
-```
+Uses `prometheus/client_golang`. No flag to enable it. Prometheus scrapes the
+gateway on the internal Compose network.
 
 | Metric                                   | Type      | Labels                            | Description                                                            |
 | ---------------------------------------- | --------- | --------------------------------- | ---------------------------------------------------------------------- |
@@ -30,7 +27,7 @@ The entity, injection, and scan counters are zero in gateway mode (no detection 
 scrape_configs:
   - job_name: promptshield
     static_configs:
-      - targets: ["localhost:8080"]
+      - targets: ["promptshield-gateway:8080"]
     scrape_interval: 15s
 ```
 

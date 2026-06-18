@@ -1,50 +1,104 @@
 # Filter — PromptShield + Bifrost
 
-AI-шлюз с PII-защитой для команды.
+One production AI gateway with PromptShield inline security and Bifrost provider routing.
 
-## Архитектура
+## Production Topology Contract
+
+All OpenAI-compatible inference traffic enters the product through Nginx at `/v1/*`.
+PromptShield is mandatory pre-routing enforcement: it screens requests before Bifrost
+or any model provider can receive them. Bifrost is the downstream provider/router and
+governance control plane.
+
+Accepted production request path:
 
 ```
-Пользователь
+Client
     ↓
-Nginx (:80/:443)
-    ├── /v1/*    → PromptShield Gateway (:8080) → Bifrost (:8081) → LLM Providers
-    ├── /admin/*  → Dashboard (:3000)
-    └── /health   → PromptShield health
-                     ↓
-              PromptShield Engine (:4321) — PII-детекция (Presidio + spaCy)
-                     ↓
-              Postgres (:5432)
+Nginx /v1/*
+    ↓
+PromptShield Gateway
+    ↓ allowed requests only
+Bifrost /v1
+    ↓
+LLM provider
 ```
 
-## Быстрый старт
+Blocked PromptShield requests must stop at PromptShield and must not reach Bifrost.
+Clients must not call Bifrost `/v1` directly in production.
 
-### 1. Настройка
+`/bifrost/` is private/admin UI access for router/provider management only. It is
+not the public inference URL; Nginx blocks `/bifrost/v1` and `/bifrost/v1/*` so
+Bifrost inference cannot bypass PromptShield. The production Nginx config denies
+public access to `/bifrost/` and only allows localhost plus the fixed Docker
+bridge gateway used by the local Compose stack. Add authentication or an
+explicit narrow admin allowlist before enabling remote admin access.
+
+## Architecture
+
+```
+Client
+    ↓
+Nginx (:80/:443 public)
+    ├── /v1/*       → PromptShield Gateway (:8080 internal) → Bifrost (:8081 internal) → LLM providers
+    ├── /bifrost/   → Bifrost admin UI only; /bifrost/v1/* is blocked
+    ├── /api, /trpc → Dashboard API (:3000 internal)
+    ├── /           → Dashboard web (:8000 internal)
+    └── /health     → PromptShield Gateway health
+                     ↓
+              PromptShield Engine (:4321 internal) - PII detection
+                     ↓
+              Postgres (:5432 internal)
+```
+
+## Health Checks
+
+Production health checks are defined in `docker-compose.yml`:
+
+- Nginx depends on healthy PromptShield Gateway and Dashboard services.
+- Product gateway: `GET http://localhost/health`.
+- PromptShield Engine: internal Compose healthcheck `GET /ready` on port 4321.
+- Dashboard API: internal Compose healthcheck `GET /` on port 3000.
+- Postgres: `pg_isready -U postgres`.
+- Bifrost starts before PromptShield forwards allowed inference traffic to `http://bifrost:8081/v1`.
+
+Run static topology verification before deployment changes:
+
+```bash
+scripts/verify-production-topology.sh
+```
+
+## Quick Start
+
+### 1. Configure
 
 ```bash
 cp .env.example .env
-# Отредактируйте .env — укажите пароли, ключи, домен
+# Edit .env: set strong secrets, admin emails, and domain.
 nano .env
 ```
 
-### 2. Запуск
+Provider API keys and routing configuration belong to Bifrost. Add provider keys
+through the Bifrost admin UI or your approved secret-management workflow; do not
+commit real provider secrets or `bifrost-data/*` runtime state to this repository.
+
+### 2. Run
 
 ```bash
 docker compose up -d
 ```
 
-### 3. Настройка Bifrost
+### 3. Configure Bifrost
 
-После запуска откройте Web UI Bifrost для добавления LLM-провайдеров:
+After startup, open the Bifrost admin UI through Nginx from the Docker host:
 
 ```bash
-# Bifrost Web UI доступен напрямую:
-open http://your-server:8081
+open http://localhost/bifrost/
 ```
 
-Добавьте API-ключи OpenAI, Anthropic и т.д. через интерфейс Bifrost.
+Add OpenAI, Anthropic, Gemini, or other provider credentials in Bifrost. PromptShield
+must stay in `openai-compatible` mode and forward allowed requests to Bifrost.
 
-### 4. Проверка
+### 4. Verify
 
 ```bash
 # Health check
@@ -59,16 +113,16 @@ curl -X POST http://your-server/v1/chat/completions \
   }'
 ```
 
-## Порты
+## Ports
 
-| Сервис | Внешний | Внутренний |
+| Service | External | Internal |
 |--------|---------|------------|
-| Nginx  | 80, 443 | — |
-| PromptShield Gateway | 8080 | 8080 |
-| PromptShield Engine | 4321 | 4321 |
-| Bifrost | 8081 | 8081 |
-| Dashboard | 3000 | 3000 |
-| Postgres | — | 5432 |
+| Nginx | 80, 443 | - |
+| PromptShield Gateway | - | 8080 |
+| PromptShield Engine | - | 4321 |
+| Bifrost | via `/bifrost/` admin UI only | 8081 |
+| Dashboard API/Web | via Nginx | 3000, 8000 |
+| Postgres | - | 5432 |
 
 ## SSL (Let's Encrypt)
 
@@ -88,21 +142,22 @@ cp /etc/letsencrypt/live/your-domain.com/privkey.pem nginx/ssl/
 docker compose restart nginx
 ```
 
-## Настройка PII-политики
+## PII Policy
 
-Отредактируйте `policy.yaml` для настройки:
+Edit `policy.yaml` to configure PromptShield enforcement:
 
-- **mask** — заменить PII на плейсхолдеры, затем восстановить в ответе
-- **block** — отклонить запрос с PII
-- **allow** — пропустить без обработки
+- **mask** - replace PII with placeholders, then restore in the response
+- **block** - reject the request before Bifrost/provider routing
+- **allow** - pass the request through without transformation
 
-Поддерживаемые типы: CREDIT_CARD, US_SSN, EMAIL_ADDRESS, PHONE_NUMBER, IBAN_CODE, IP_ADDRESS, PERSON, LOCATION, MEDICAL_LICENSE, US_PASSPORT, US_DRIVER_LICENSE
+Supported types: CREDIT_CARD, US_SSN, EMAIL_ADDRESS, PHONE_NUMBER, IBAN_CODE,
+IP_ADDRESS, PERSON, LOCATION, MEDICAL_LICENSE, US_PASSPORT, US_DRIVER_LICENSE
 
-## Языки PII-детекции
+## PII Detection Languages
 
-В `.env` переменная `SPACY_PROFILE`:
+Set `SPACY_PROFILE` in `.env`:
 
-| Значение | Языки |
+| Value | Languages |
 |----------|-------|
 | minimal | English + Chinese |
 | fr | minimal + French |
