@@ -268,7 +268,7 @@ test_bifrost_is_internal_and_pinned() {
 }
 
 test_bifrost_promptshield_routes_are_auth_gated() {
-  local handler_source server_source middleware_source register_block
+  local handler_source server_source middleware_source register_block route_lines bypassed_routes
   handler_source="$(cat bifrost-src/transports/bifrost-http/handlers/promptshield.go)"
   server_source="$(cat bifrost-src/transports/bifrost-http/server/server.go)"
   middleware_source="$(cat bifrost-src/transports/bifrost-http/handlers/middlewares.go)"
@@ -288,13 +288,25 @@ test_bifrost_promptshield_routes_are_auth_gated() {
     return
   fi
 
-  if ! grep -Eq '"/api/promptshield/[^"]*".*lib\.ChainMiddlewares\([^,]+,[[:space:]]*middlewares\.\.\.\)' <<<"$register_block"; then
+  route_lines="$(grep -E '"/api/promptshield(/[^"]*)?"' <<<"$register_block" || true)"
+  if [[ -z "$route_lines" ]]; then
+    fail "test_bifrost_promptshield_routes_are_auth_gated: missing /api/promptshield route registrations"
+    return
+  fi
+
+  bypassed_routes="$(grep -Ev 'lib\.ChainMiddlewares\([^,]+,[[:space:]]*middlewares\.\.\.\)' <<<"$route_lines" || true)"
+  if [[ -n "$bypassed_routes" ]]; then
+    fail "test_bifrost_promptshield_routes_are_auth_gated: every /api/promptshield route must use supplied middleware: ${bypassed_routes//$'\n'/; }"
+    return
+  fi
+
+  if ! grep -Eq '"/api/promptshield/[^"]*".*lib\.ChainMiddlewares\([^,]+,[[:space:]]*middlewares\.\.\.\)' <<<"$route_lines"; then
     fail "test_bifrost_promptshield_routes_are_auth_gated: /api/promptshield routes must be registered through supplied middleware"
     return
   fi
 
-  if grep -Eq '"/api/promptshield/[^"]*"[^\n]*h\.[A-Za-z0-9_]+[[:space:]]*\)' <<<"$register_block" && ! grep -Eq '"/api/promptshield/[^"]*".*lib\.ChainMiddlewares' <<<"$register_block"; then
-    fail "test_bifrost_promptshield_routes_are_auth_gated: PromptShield routes must not bypass middleware"
+  if grep -Eq '"/api/promptshield/[^"]*".*lib\.ChainMiddlewares\([^)]*\)' <<<"$route_lines" && ! grep -Eq '"/api/promptshield/[^"]*".*lib\.ChainMiddlewares\([^,]+,[[:space:]]*middlewares\.\.\.\)' <<<"$route_lines"; then
+    fail "test_bifrost_promptshield_routes_are_auth_gated: PromptShield routes must pass middlewares... into lib.ChainMiddlewares"
     return
   fi
 
@@ -400,7 +412,7 @@ test_bifrost_promptshield_ui_uses_same_origin_api() {
 }
 
 test_promptshield_gateway_raw_key_is_one_time_only() {
-  local promptshield_ui_sources handler_source post_gateway_key_block
+  local promptshield_ui_sources storage_hits handler_source post_gateway_key_block
   promptshield_ui_sources="$(cat bifrost-src/ui/lib/store/apis/promptShieldApi.ts; find bifrost-src/ui/app/workspace/promptshield -type f -name '*.tsx' -print0 | xargs -0 cat)"
   handler_source="$(cat bifrost-src/transports/bifrost-http/handlers/promptshield.go)"
   post_gateway_key_block="$(awk '
@@ -429,8 +441,9 @@ test_promptshield_gateway_raw_key_is_one_time_only() {
     return
   fi
 
-  if grep -Eq 'rawKey[^;\n]*(localStorage|sessionStorage)|(localStorage|sessionStorage)[^;\n]*rawKey' <<<"$promptshield_ui_sources"; then
-    fail "test_promptshield_gateway_raw_key_is_one_time_only: rawKey must not be persisted to localStorage or sessionStorage"
+  if grep -Eq 'localStorage|sessionStorage' <<<"$promptshield_ui_sources"; then
+    storage_hits="$(grep -ERn 'localStorage|sessionStorage' bifrost-src/ui/lib/store/apis/promptShieldApi.ts bifrost-src/ui/app/workspace/promptshield || true)"
+    fail "test_promptshield_gateway_raw_key_is_one_time_only: PromptShield UI/API must not use browser storage where rawKey can be aliased and persisted: ${storage_hits//$'\n'/; }"
     return
   fi
 
