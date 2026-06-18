@@ -27,8 +27,9 @@ Blocked PromptShield requests must stop at PromptShield and must not reach Bifro
 Clients must not call Bifrost `/v1` directly in production.
 
 `/bifrost/` is local/admin UI access for router/provider management only. It is not
-the public inference URL and should be protected by your normal admin network,
-SSO/VPN, or firewall controls.
+the public inference URL; Nginx blocks `/bifrost/v1` and `/bifrost/v1/*` so
+Bifrost inference cannot bypass PromptShield. Protect `/bifrost/` with your
+normal admin network, SSO/VPN, or firewall controls.
 
 ## Architecture
 
@@ -37,7 +38,7 @@ Client
     ↓
 Nginx (:80/:443 public)
     ├── /v1/*       → PromptShield Gateway (:8080 internal) → Bifrost (:8081 internal) → LLM providers
-    ├── /bifrost/   → Bifrost admin UI only
+    ├── /bifrost/   → Bifrost admin UI only; /bifrost/v1/* is blocked
     ├── /api, /trpc → Dashboard API (:3000 internal)
     ├── /           → Dashboard web (:8000 internal)
     └── /health     → PromptShield Gateway health

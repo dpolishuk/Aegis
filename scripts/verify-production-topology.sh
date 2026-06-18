@@ -50,6 +50,71 @@ test_public_v1_routes_to_promptshield_not_bifrost() {
   pass "test_public_v1_routes_to_promptshield_not_bifrost"
 }
 
+test_bifrost_admin_proxy_blocks_inference_subpath() {
+  local exact_line prefix_line admin_line exact_block prefix_block
+  exact_line="$(awk '$0 ~ /^[[:space:]]*location[[:space:]]+=[[:space:]]+\/bifrost\/v1[[:space:]]*\{/ { print NR; exit }' nginx/nginx.conf)"
+  prefix_line="$(awk '$0 ~ /^[[:space:]]*location[[:space:]]+\^~[[:space:]]+\/bifrost\/v1\/[[:space:]]*\{/ { print NR; exit }' nginx/nginx.conf)"
+  admin_line="$(awk '$0 ~ /^[[:space:]]*location[[:space:]]+\/bifrost\/[[:space:]]*\{/ { print NR; exit }' nginx/nginx.conf)"
+
+  if [[ -z "$exact_line" ]]; then
+    fail "test_bifrost_admin_proxy_blocks_inference_subpath: nginx/nginx.conf must block exact /bifrost/v1 before the admin proxy"
+    return
+  fi
+
+  if [[ -z "$prefix_line" ]]; then
+    fail "test_bifrost_admin_proxy_blocks_inference_subpath: nginx/nginx.conf must block /bifrost/v1/* before the admin proxy"
+    return
+  fi
+
+  if [[ -z "$admin_line" ]]; then
+    fail "test_bifrost_admin_proxy_blocks_inference_subpath: nginx/nginx.conf has no /bifrost/ admin proxy"
+    return
+  fi
+
+  if (( exact_line >= admin_line || prefix_line >= admin_line )); then
+    fail "test_bifrost_admin_proxy_blocks_inference_subpath: /bifrost/v1 blocks must appear before the broad /bifrost/ admin proxy"
+    return
+  fi
+
+  exact_block="$(awk '
+    $0 ~ /^[[:space:]]*location[[:space:]]+=[[:space:]]+\/bifrost\/v1[[:space:]]*\{/ { in_block=1; depth=0 }
+    in_block {
+      print
+      opens=gsub(/\{/, "{")
+      closes=gsub(/\}/, "}")
+      depth += opens - closes
+      if (depth <= 0) exit
+    }
+  ' nginx/nginx.conf)"
+  prefix_block="$(awk '
+    $0 ~ /^[[:space:]]*location[[:space:]]+\^~[[:space:]]+\/bifrost\/v1\/[[:space:]]*\{/ { in_block=1; depth=0 }
+    in_block {
+      print
+      opens=gsub(/\{/, "{")
+      closes=gsub(/\}/, "}")
+      depth += opens - closes
+      if (depth <= 0) exit
+    }
+  ' nginx/nginx.conf)"
+
+  if ! grep -Eq 'return[[:space:]]+(403|404)[[:space:]]*;' <<<"$exact_block"; then
+    fail "test_bifrost_admin_proxy_blocks_inference_subpath: exact /bifrost/v1 block must return 403 or 404"
+    return
+  fi
+
+  if ! grep -Eq 'return[[:space:]]+(403|404)[[:space:]]*;' <<<"$prefix_block"; then
+    fail "test_bifrost_admin_proxy_blocks_inference_subpath: /bifrost/v1/* block must return 403 or 404"
+    return
+  fi
+
+  if grep -Eiq 'proxy_pass|rewrite' <<<"$exact_block$prefix_block"; then
+    fail "test_bifrost_admin_proxy_blocks_inference_subpath: /bifrost/v1 blocks must not proxy or rewrite to Bifrost"
+    return
+  fi
+
+  pass "test_bifrost_admin_proxy_blocks_inference_subpath"
+}
+
 test_promptshield_upstream_points_to_bifrost_v1() {
   if ! grep -q 'PROMPTSHIELD_PROVIDER:.*openai-compatible' docker-compose.yml; then
     fail "test_promptshield_upstream_points_to_bifrost_v1: PromptShield must run in openai-compatible provider mode"
@@ -235,6 +300,7 @@ test_legacy_promptshield_provider_route_not_primary_nav() {
 }
 
 test_public_v1_routes_to_promptshield_not_bifrost
+test_bifrost_admin_proxy_blocks_inference_subpath
 test_promptshield_upstream_points_to_bifrost_v1
 test_bifrost_is_internal_and_pinned
 test_docs_do_not_document_public_bifrost_inference
