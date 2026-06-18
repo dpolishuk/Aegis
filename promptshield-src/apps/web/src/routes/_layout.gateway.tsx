@@ -16,14 +16,6 @@ export const Route = createFileRoute("/_layout/gateway")({
   component: GatewayPage,
 });
 
-/* Types */
-type Provider =
-  | "gemini"
-  | "openai"
-  | "anthropic"
-  | "openai-compatible"
-  | "selfhosted";
-
 /* Helpers */
 function Sk({ className = "" }: { className?: string }) {
   return (
@@ -187,12 +179,6 @@ function GatewayPage() {
   // Form state — initialised from fetched config
   const [mode, setMode] = useState<"gateway" | "security">("security");
   const [engineUrl, setEngineUrl] = useState("");
-  const [providerMode, setProviderMode] = useState<"single" | "multi">(
-    "single",
-  );
-  const [provider, setProvider] = useState<Provider>("gemini");
-  const [upstreamUrl, setUpstreamUrl] = useState("");
-  const [model, setModel] = useState("");
   const [port, setPort] = useState("8080");
   const [chatRoute, setChatRoute] = useState("/v1/chat/completions");
   const [policyPath, setPolicyPath] = useState("config/policy.yaml");
@@ -204,10 +190,6 @@ function GatewayPage() {
     if (!d) return;
     setMode(d.mode as "gateway" | "security");
     setEngineUrl(d.engineUrl);
-    setProviderMode(d.providerMode as "single" | "multi");
-    setProvider(d.provider as Provider);
-    setUpstreamUrl(d.upstreamUrl);
-    setModel(d.models?.global ?? "");
     setPort(d.port);
     setChatRoute(d.chatRoute);
     setPolicyPath(d.policyPath);
@@ -222,19 +204,6 @@ function GatewayPage() {
     updateConfig.mutate({
       mode,
       engineUrl,
-      providerMode,
-      provider,
-      upstreamUrl,
-      providers: [],
-      providerUrls: {},
-      models: {
-        global: model,
-        gemini: "",
-        openai: "",
-        anthropic: "",
-        selfhosted: "",
-      },
-      modelRoutes: [],
       port,
       chatRoute,
       policyPath,

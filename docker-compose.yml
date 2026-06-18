@@ -84,8 +84,8 @@ services:
       PROMPTSHIELD_API_KEY: ${PROMPTSHIELD_ENGINE_API_KEY}
       PROMPTSHIELD_ALLOW_UNAUTH: "false"
       PROMPTSHIELD_LOG_LEVEL: ${PROMPTSHIELD_LOG_LEVEL:-INFO}
-    ports:
-      - "4321:4321"
+    expose:
+      - "4321"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:4321/ready')\" || exit 1"]
       interval: 10s
@@ -141,8 +141,8 @@ services:
     volumes:
       - ./policy.yaml:/policy/policy.yaml
       - ./gateway.env:/policy/gateway.env
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
       interval: 15s
@@ -174,8 +174,8 @@ services:
     environment:
       VITE_SERVER_URL: ${VITE_SERVER_URL:-http://${NGINX_HOST:-localhost}}
       SSR_SERVER_URL: http://dashboard:3000
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     depends_on:
       dashboard:
         condition: service_healthy

@@ -54,9 +54,9 @@ Nginx (:80/:443 public)
 Production health checks are defined in `docker-compose.yml`:
 
 - Nginx depends on healthy PromptShield Gateway and Dashboard services.
-- PromptShield Gateway: `GET http://localhost:8080/health`.
-- PromptShield Engine: `GET http://localhost:4321/ready`.
-- Dashboard API: `GET http://localhost:3000/`.
+- Product gateway: `GET http://localhost/health`.
+- PromptShield Engine: internal Compose healthcheck `GET /ready` on port 4321.
+- Dashboard API: internal Compose healthcheck `GET /` on port 3000.
 - Postgres: `pg_isready -U postgres`.
 - Bifrost starts before PromptShield forwards allowed inference traffic to `http://bifrost:8081/v1`.
 
@@ -118,8 +118,8 @@ curl -X POST http://your-server/v1/chat/completions \
 | Service | External | Internal |
 |--------|---------|------------|
 | Nginx | 80, 443 | - |
-| PromptShield Gateway | local/admin only | 8080 |
-| PromptShield Engine | local/admin only | 4321 |
+| PromptShield Gateway | - | 8080 |
+| PromptShield Engine | - | 4321 |
 | Bifrost | via `/bifrost/` admin UI only | 8081 |
 | Dashboard API/Web | via Nginx | 3000, 8000 |
 | Postgres | - | 5432 |

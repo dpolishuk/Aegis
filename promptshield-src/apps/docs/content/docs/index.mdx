@@ -19,26 +19,16 @@ Point your SDK at the gateway and it scans every prompt, enforces policy, and ro
 
 Block or mask per entity type. Policy is a YAML file — check it into git, hot-reloads without restart.
 
-## Three components
+## One gateway product
 
-|                              | Gateway only | + Engine | + Dashboard |
-| ---------------------------- | :----------: | :------: | :---------: |
-| Provider routing             |      ✓       |    ✓     |      ✓      |
-| Rate limiting                |      ✓       |    ✓     |      ✓      |
-| Token budgets                |      ✓       |    ✓     |      ✓      |
-| API key vault                |      ✓       |    ✓     |      ✓      |
-| Audit logs                   |      ✓       |    ✓     |      ✓      |
-| Prometheus metrics           |      ✓       |    ✓     |      ✓      |
-| Secret detection (150+ rules)|      ✓       |    ✓     |      ✓      |
-| PII detection                |              |    ✓     |      ✓      |
-| Prompt injection detection   |              |    ✓     |      ✓      |
-| Policy enforcement           |              |    ✓     |      ✓      |
-| Response scanning            |              |    ✓     |      ✓      |
-| Policy editor UI             |              |          |      ✓      |
-| Audit log UI                 |              |          |      ✓      |
-| Key management UI            |              |          |      ✓      |
+| Surface | Owner |
+| ------- | ----- |
+| Public `/v1` inference | PromptShield inline policy, then Bifrost provider routing |
+| Provider credentials and routes | Bifrost provider/router control plane |
+| Policy, audit, and metrics | PromptShield gateway and dashboard |
 
-Only the gateway is required. Secret detection (Gitleaks, 150+ rules) is built in and runs without the engine. Add the engine for PII and injection detection, and the dashboard for a UI.
+Nginx is the only public entry point. Component services listen on the internal
+Compose network.
 
 ## Policy actions
 

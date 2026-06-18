@@ -228,6 +228,38 @@ test_promptshield_gateway_is_internal() {
   pass "test_promptshield_gateway_is_internal"
 }
 
+test_non_nginx_components_are_internal() {
+  local service port block
+  for service in promptshield-engine dashboard web; do
+    case "$service" in
+      promptshield-engine) port="4321" ;;
+      dashboard) port="3000" ;;
+      web) port="8000" ;;
+    esac
+
+    block="$(awk -v svc="$service" '
+      $0 ~ "^  " svc ":[[:space:]]*$" { in_block=1 }
+      in_block {
+        print
+        if (seen && $0 ~ /^  [A-Za-z0-9_-]+:[[:space:]]*$/) exit
+        seen=1
+      }
+    ' docker-compose.yml)"
+
+    if grep -Eq '^[[:space:]]*ports:' <<<"$block"; then
+      fail "test_non_nginx_components_are_internal: $service must not publish a host port in production compose"
+      return
+    fi
+
+    if ! grep -Eq '^[[:space:]]*expose:' <<<"$block" || ! grep -Eq "\"?$port\"?" <<<"$block"; then
+      fail "test_non_nginx_components_are_internal: $service should expose $port only on the Compose network"
+      return
+    fi
+  done
+
+  pass "test_non_nginx_components_are_internal"
+}
+
 test_docs_do_not_document_public_bifrost_inference() {
   local docs
   docs="$(cat README.md .env.example promptshield-src/README.md promptshield-src/apps/docs/content/docs/*.mdx)"
@@ -259,6 +291,11 @@ test_docs_do_not_document_public_bifrost_inference() {
 
   if grep -ERn 'localhost:8080/v1|:8080/v1|base_url="[^"]*8080/v1|baseUrl": "[^"]*8080/v1' promptshield-src/README.md promptshield-src/apps/docs/content/docs promptshield-src/apps/web/src/routes/_layout.dashboard.tsx >/dev/null; then
     fail "test_docs_do_not_document_public_bifrost_inference: product docs/UI must show public inference through Nginx /v1, not direct component gateway :8080/v1"
+    return
+  fi
+
+  if grep -ERn 'localhost:8080|Gateway only|\./promptshield-gateway|listening on :8080|Gateway[[:space:]]+\|[[:space:]]+`:8080`' promptshield-src/README.md promptshield-src/apps/docs/content/docs >/dev/null; then
+    fail "test_docs_do_not_document_public_bifrost_inference: product docs must not publish standalone/direct PromptShield gateway component surfaces"
     return
   fi
 
@@ -381,6 +418,35 @@ test_legacy_promptshield_provider_route_not_primary_nav() {
     return
   fi
 
+  local input_schema update_api
+  input_schema="$(awk '
+    $0 ~ /^const gatewayConfigInputSchema = z\.object\(\{/ { in_block=1 }
+    in_block {
+      print
+      if ($0 ~ /^\}\);$/) exit
+    }
+  ' promptshield-src/packages/api/src/routers/gateway.ts)"
+  update_api="$(awk '
+    $0 ~ /^async function updateGatewayConfigViaApi/ { in_block=1; depth=0 }
+    in_block {
+      print
+      opens=gsub(/\{/, "{")
+      closes=gsub(/\}/, "}")
+      depth += opens - closes
+      if (depth <= 0 && NR > 1) exit
+    }
+  ' promptshield-src/packages/api/src/routers/gateway.ts)"
+
+  if grep -Eq 'providerMode|provider:|providers:|providerUrls|models:|modelRoutes|upstreamUrl' <<<"$input_schema"; then
+    fail "test_legacy_promptshield_provider_route_not_primary_nav: gateway update input schema must not accept PromptShield provider/model routing fields"
+    return
+  fi
+
+  if grep -Eq 'JSON\.stringify\(input\)' <<<"$update_api"; then
+    fail "test_legacy_promptshield_provider_route_not_primary_nav: gateway API must send an explicit security config payload, not forward raw mutation input"
+    return
+  fi
+
   pass "test_legacy_promptshield_provider_route_not_primary_nav"
 }
 
@@ -392,6 +458,11 @@ test_typecheck_covers_dashboard_and_api() {
 
   if ! grep -q '"check-types": "tsc -p tsconfig.json --noEmit"' promptshield-src/packages/api/package.json; then
     fail "test_typecheck_covers_dashboard_and_api: @promptshield/api package must run TypeScript in check-types"
+    return
+  fi
+
+  if ! (cd promptshield-src && bunx turbo check-types --filter=web --filter=@promptshield/api --force); then
+    fail "test_typecheck_covers_dashboard_and_api: focused web/API TypeScript check failed"
     return
   fi
 
@@ -430,6 +501,7 @@ test_bifrost_admin_proxy_has_access_control
 test_promptshield_upstream_points_to_bifrost_v1
 test_bifrost_is_internal_and_pinned
 test_promptshield_gateway_is_internal
+test_non_nginx_components_are_internal
 test_docs_do_not_document_public_bifrost_inference
 test_secret_bearing_bifrost_runtime_state_is_flagged
 test_dashboard_has_bifrost_router_status

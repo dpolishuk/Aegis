@@ -17,42 +17,9 @@ import {
 
 /* .env file helpers */
 
-const providerEnum = z.enum([
-  "gemini",
-  "openai",
-  "anthropic",
-  "selfhosted",
-  "openai-compatible",
-]);
-
 const gatewayConfigInputSchema = z.object({
   mode: z.enum(["gateway", "security"]),
   engineUrl: z.string(),
-  providerMode: z.enum(["single", "multi"]),
-  provider: providerEnum,
-  upstreamUrl: z.string(),
-  providers: z.array(providerEnum),
-  providerUrls: z
-    .object({
-      gemini: z.string().optional(),
-      openai: z.string().optional(),
-      anthropic: z.string().optional(),
-      selfhosted: z.string().optional(),
-      "openai-compatible": z.string().optional(),
-    })
-    .optional(),
-  models: z
-    .object({
-      global: z.string(),
-      gemini: z.string(),
-      openai: z.string(),
-      anthropic: z.string(),
-      selfhosted: z.string(),
-    })
-    .optional(),
-  modelRoutes: z
-    .array(z.object({ model: z.string(), provider: providerEnum }))
-    .optional(),
   port: z.string().optional(),
   chatRoute: z.string().optional(),
   policyPath: z.string().optional(),
@@ -211,11 +178,18 @@ async function fetchGatewayConfig(): Promise<Record<string, unknown>> {
 async function updateGatewayConfigViaApi(input: z.infer<typeof gatewayConfigInputSchema>) {
   assertGatewayApiSecurity();
   const url = buildGatewayConfigUrl();
+  const securityConfig = {
+    mode: input.mode,
+    engineUrl: input.engineUrl,
+    port: input.port,
+    chatRoute: input.chatRoute,
+    policyPath: input.policyPath,
+  };
 
   const putRes = await fetch(url, {
     method: "PUT",
     headers: gatewayAdminHeaders("application/json"),
-    body: JSON.stringify(input),
+    body: JSON.stringify(securityConfig),
     signal: AbortSignal.timeout(5000),
   }).catch(() => null);
 
@@ -229,7 +203,7 @@ async function updateGatewayConfigViaApi(input: z.infer<typeof gatewayConfigInpu
   const postRes = await fetch(url, {
     method: "POST",
     headers: gatewayAdminHeaders("application/json"),
-    body: JSON.stringify(input),
+    body: JSON.stringify(securityConfig),
     signal: AbortSignal.timeout(5000),
   }).catch(() => null);
 

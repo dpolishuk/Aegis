@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Smoke test for the production invariant:
-# a PromptShield-blocked/rate-limited request must not create a Bifrost/provider
-# request.
+# a PromptShield detection-policy block must not create a Bifrost/provider
+# request after a positive control proves the upstream path works.
 #
 # Usage:
 #   bash scripts/smoke-blocked-request-no-bifrost-hit.sh
@@ -99,16 +99,24 @@ class Handler(BaseHTTPRequestHandler):
             body = self.rfile.read(length).decode("utf-8", errors="replace")
             if "blocked@example.com" in body:
                 self._json(200, {
+                    "pii_detected": True,
+                    "injection_detected": False,
                     "entities": [{
-                        "entity_type": "EMAIL_ADDRESS",
-                        "score": 0.99,
+                        "type": "EMAIL_ADDRESS",
                         "start": 0,
                         "end": 19,
+                        "text": "blocked@example.com",
+                        "score": 0.99,
                     }],
-                    "injections": [],
+                    "language": "en",
                 })
                 return
-            self._json(200, {"entities": [], "injections": []})
+            self._json(200, {
+                "pii_detected": False,
+                "injection_detected": False,
+                "entities": [],
+                "language": "en",
+            })
             return
         self._json(404, {"error": "not found"})
 
@@ -151,8 +159,6 @@ DOCKER
 
 sed \
   -e 's/EMAIL_ADDRESS: mask/EMAIL_ADDRESS: block/' \
-  -e 's/requests_per_minute: .*/requests_per_minute: 1/' \
-  -e 's/burst: .*/burst: 1/' \
   "$ROOT_DIR/policy.yaml" >"$policy_file"
 
 cat >"$compose_file" <<YAML
@@ -305,11 +311,11 @@ status="$(
     --max-time 15 \
     -X POST "http://localhost:$host_port/v1/chat/completions" \
     -H "Content-Type: application/json" \
-    -d '{"model":"gpt-4o","messages":[{"role":"user","content":"blocked request should be rate limited before Bifrost"}]}'
+    -d '{"model":"gpt-4o","messages":[{"role":"user","content":"blocked request contains blocked@example.com before Bifrost"}]}'
 )"
 
-if [[ "$status" != "429" ]]; then
-  echo "Expected rate-limited blocked request status, got HTTP $status" >&2
+if [[ "$status" != "400" && "$status" != "403" ]]; then
+  echo "Expected detection-policy blocked request status, got HTTP $status" >&2
   cat "$tmp_dir/blocked-response.json" >&2
   exit 1
 fi
@@ -320,4 +326,4 @@ if [[ -s "$counter_file" ]]; then
   exit 1
 fi
 
-echo "PASS: blocked request produced zero Bifrost/provider upstream hits"
+echo "PASS: detection-policy blocked request produced zero Bifrost/provider upstream hits"

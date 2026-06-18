@@ -113,7 +113,7 @@ uv run python main.py   # → :4321
 # 2. Gateway
 cd promptshield-gateway
 cp .env.example .env
-make run   # → :8080
+# In production, run behind the product Nginx entry point.
 
 # 3. Dashboard
 cd promptshield
@@ -122,8 +122,8 @@ cp apps/server/.env.example apps/server/.env
 cp apps/web/.env.example apps/web/.env
 cd packages/db && bunx drizzle-kit migrate && cd ../..
 bun run dev:server   # → :3000
-bun run dev:web      # → :8000
-bun run dev:docs     # → :4000
+bun run dev:web
+bun run dev:docs
 ```
 
 ---
