@@ -344,7 +344,7 @@ to a project-owned Bifrost build:
 bifrost:
   build:
     context: ./bifrost-src
-    dockerfile: Dockerfile
+    dockerfile: transports/Dockerfile
   image: aegis-bifrost:${AEGIS_BIFROST_TAG:-promptshield-admin}
   environment:
     APP_PORT: "8081"
@@ -354,7 +354,7 @@ bifrost:
     PROMPTSHIELD_GATEWAY_URL: http://promptshield-gateway:8080
     PROMPTSHIELD_ENGINE_URL: http://promptshield-engine:4321
     PROMPTSHIELD_ADMIN_TOKEN: ${PROMPTSHIELD_ADMIN_TOKEN}
-    PROMPTSHIELD_GATEWAY_ADMIN_TOKEN: ${GATEWAY_ADMIN_TOKEN}
+    PROMPTSHIELD_GATEWAY_ADMIN_TOKEN: ${PROMPTSHIELD_GATEWAY_ADMIN_TOKEN}
     PROMPTSHIELD_ENGINE_API_KEY: ${PROMPTSHIELD_ENGINE_API_KEY}
 ```
 

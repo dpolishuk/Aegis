@@ -80,6 +80,9 @@ nano .env
 Provider API keys and routing configuration belong to Bifrost. Add provider keys
 through the Bifrost admin UI or your approved secret-management workflow; do not
 commit real provider secrets or `bifrost-data/*` runtime state to this repository.
+Bifrost source is managed as the `bifrost-src` submodule and built by Compose;
+see [docs/bifrost-source-build.md](docs/bifrost-source-build.md) for
+initialization, build, and rollback instructions.
 
 ### 2. Run
 

@@ -224,8 +224,14 @@ services:
 
   # ─── Bifrost (AI Gateway / Router) ────────────────────────
   bifrost:
-    # Digest-pinned image; refresh intentionally after reviewing release notes.
-    image: maximhq/bifrost@sha256:240634280b374bf0fae11e888f5f9238bf30a2c323a75d905059902fea2c7a5d
+    # Project-owned source build. Rollback path: remove build: and restore
+    # image: maximhq/bifrost@sha256:240634280b374bf0fae11e888f5f9238bf30a2c323a75d905059902fea2c7a5d
+    build:
+      context: ./bifrost-src
+      dockerfile: transports/Dockerfile
+      args:
+        VERSION: ${AEGIS_BIFROST_VERSION:-1.5.15}
+    image: aegis-bifrost:${AEGIS_BIFROST_TAG:-v1.5.15}
     container_name: filter-bifrost
     restart: unless-stopped
     # Run as root so the entrypoint can fix /app/data ownership and the app can
@@ -238,6 +244,14 @@ services:
       APP_PORT: "8081"
       APP_HOST: "0.0.0.0"
       LOG_LEVEL: ${BIFROST_LOG_LEVEL:-info}
+      # Server-only PromptShield integration settings for future Bifrost admin
+      # proxy handlers. Do not expose these values to browser code.
+      PROMPTSHIELD_DASHBOARD_URL: ${PROMPTSHIELD_DASHBOARD_URL:-http://dashboard:3000}
+      PROMPTSHIELD_GATEWAY_URL: ${PROMPTSHIELD_GATEWAY_URL:-http://promptshield-gateway:8080}
+      PROMPTSHIELD_ENGINE_URL: ${PROMPTSHIELD_ENGINE_URL:-http://promptshield-engine:4321}
+      PROMPTSHIELD_ADMIN_TOKEN: ${PROMPTSHIELD_ADMIN_TOKEN:-}
+      PROMPTSHIELD_GATEWAY_ADMIN_TOKEN: ${PROMPTSHIELD_GATEWAY_ADMIN_TOKEN:-}
+      PROMPTSHIELD_ENGINE_API_KEY: ${PROMPTSHIELD_ENGINE_API_KEY:-}
     expose:
       - "8081"
     volumes:

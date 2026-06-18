@@ -1,0 +1,3 @@
+[submodule "bifrost-src"]
+	path = bifrost-src
+	url = https://github.com/dpolishuk/bifrost.git
