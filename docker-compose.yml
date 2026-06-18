@@ -137,7 +137,7 @@ services:
       POLICY_FILE_PATH: /policy/policy.yaml
       GATEWAY_ENV_PATH: /policy/gateway.env
       AUDIT_INGEST_SECRET: ${AUDIT_INGEST_SECRET}
-      CONFIG_ADMIN_EMAILS: ${CONFIG_ADMIN_EMAILS:-admin@admin.com}
+      CONFIG_ADMIN_EMAILS: ${CONFIG_ADMIN_EMAILS:-}
     volumes:
       - ./policy.yaml:/policy/policy.yaml
       - ./gateway.env:/policy/gateway.env

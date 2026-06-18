@@ -55,11 +55,11 @@ environment files in the combined product.
 |---|---|---|
 | `PROMPTSHIELD_ADMIN_TOKEN` | — | Authenticates `/admin/config` and `/admin/policy` requests. Must match `GATEWAY_ADMIN_TOKEN` in the dashboard. Use a strong random value in production. |
 
-### Audit log (standalone mode)
+### Audit log forwarding
 
 | Variable | Default | Description |
 |---|---|---|
-| `PROMPTSHIELD_AUDIT_URL` | — | Dashboard server URL for direct audit push, e.g. `http://localhost:3000`. Leave unset when using docker-compose (log-fwd handles audit forwarding). |
+| `PROMPTSHIELD_AUDIT_URL` | — | Optional internal dashboard URL for direct audit push. Leave unset in the production Compose product; `log-fwd` handles audit forwarding. |
 | `AUDIT_INGEST_SECRET` | — | Shared secret for the audit ingest endpoint. Required when `PROMPTSHIELD_AUDIT_URL` is set. Must match `AUDIT_INGEST_SECRET` in the dashboard. |
 
 ### Security and metrics
@@ -172,7 +172,8 @@ When running with docker-compose, the following variables are set automatically 
 
 **Cause:** `PROMPTSHIELD_ENGINE_API_KEY` is missing from the gateway environment.
 
-**Fix:** Add `PROMPTSHIELD_ENGINE_API_KEY=<value>` to `promptshield-gateway/.env`. Value must equal `PROMPTSHIELD_API_KEY` on the engine.
+**Fix:** Set `PROMPTSHIELD_ENGINE_API_KEY=<value>` in the root product `.env`.
+Compose passes the same value to the gateway, dashboard, and engine.
 
 ---
 
@@ -182,7 +183,7 @@ When running with docker-compose, the following variables are set automatically 
 
 **Cause:** `GATEWAY_ADMIN_TOKEN` (dashboard) does not match `PROMPTSHIELD_ADMIN_TOKEN` (gateway).
 
-**Fix:** Ensure both carry the same value. For docker-compose dev, set `GATEWAY_ADMIN_TOKEN=dev-gateway-admin-token` in `promptshield/.env.local` and `PROMPTSHIELD_ADMIN_TOKEN=dev-gateway-admin-token` in `promptshield-gateway/.env.local`.
+**Fix:** Ensure both carry the same value through the root product `.env`.
 
 ---
 
@@ -194,4 +195,5 @@ When running with docker-compose, the following variables are set automatically 
 
 **Docker Compose fix:** Confirm the `log-fwd` service is running (`docker compose --profile logs up`). Check that `AUDIT_INGEST_SECRET` in `promptshield/.env.local` matches the value passed to the log-fwd container (both default to `dev-ingest-secret`).
 
-**Standalone fix:** Set `PROMPTSHIELD_AUDIT_URL=http://localhost:3000` and `AUDIT_INGEST_SECRET=<value>` in `promptshield-gateway/.env`. The secret must match `AUDIT_INGEST_SECRET` in the dashboard.
+**Direct-push fix:** Set an internal dashboard URL for `PROMPTSHIELD_AUDIT_URL`
+and use the same `AUDIT_INGEST_SECRET` value as the dashboard.

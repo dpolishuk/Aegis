@@ -143,6 +143,11 @@ test_bifrost_admin_proxy_has_access_control() {
     return
   fi
 
+  if grep -Eq 'allow[[:space:]]+(10\.0\.0\.0/8|172\.16\.0\.0/12|192\.168\.0\.0/16)[[:space:]]*;' <<<"$admin_block"; then
+    fail "test_bifrost_admin_proxy_has_access_control: /bifrost/ admin proxy must not allow broad private networks by default"
+    return
+  fi
+
   pass "test_bifrost_admin_proxy_has_access_control"
 }
 
@@ -299,6 +304,11 @@ test_docs_do_not_document_public_bifrost_inference() {
     return
   fi
 
+  if grep -ERn 'standalone|systemd|/etc/promptshield|promptshield-gateway/\.env|gateway pushes audit events directly|works standalone|Run each service directly|uv run uvicorn|journalctl -u promptshield|sudo make install|make run[[:space:]]*(#|$)' promptshield-src/README.md promptshield-src/apps/docs/content/docs >/dev/null; then
+    fail "test_docs_do_not_document_public_bifrost_inference: product docs must not document standalone component deployment surfaces"
+    return
+  fi
+
   pass "test_docs_do_not_document_public_bifrost_inference"
 }
 
@@ -370,6 +380,20 @@ test_bifrost_url_is_configured() {
   fi
 
   pass "test_bifrost_url_is_configured"
+}
+
+test_config_admin_has_no_claimable_default() {
+  if grep -Eq 'CONFIG_ADMIN_EMAILS:.*admin@admin\.com|CONFIG_ADMIN_EMAILS=.*admin@admin\.com' docker-compose.yml .env.example promptshield-src/apps/docs/content/docs/*.mdx; then
+    fail "test_config_admin_has_no_claimable_default: config admin must not default to a claimable public signup email"
+    return
+  fi
+
+  if ! grep -q 'CONFIG_ADMIN_EMAILS:.*CONFIG_ADMIN_EMAILS:-}' docker-compose.yml; then
+    fail "test_config_admin_has_no_claimable_default: compose should leave CONFIG_ADMIN_EMAILS empty unless explicitly configured"
+    return
+  fi
+
+  pass "test_config_admin_has_no_claimable_default"
 }
 
 test_router_admin_link_is_not_public_inference() {
@@ -506,6 +530,7 @@ test_docs_do_not_document_public_bifrost_inference
 test_secret_bearing_bifrost_runtime_state_is_flagged
 test_dashboard_has_bifrost_router_status
 test_bifrost_url_is_configured
+test_config_admin_has_no_claimable_default
 test_router_admin_link_is_not_public_inference
 test_legacy_promptshield_provider_route_not_primary_nav
 test_typecheck_covers_dashboard_and_api

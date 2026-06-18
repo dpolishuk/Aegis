@@ -1,38 +1,55 @@
 ---
 title: Production Deployment
-description: One command to install PromptShield as a hardened systemd service on Linux.
+description: Deploy the combined PromptShield + Bifrost gateway product.
 ---
 
-`sudo make install` does everything: builds the binary, creates a dedicated `promptshield` system user, installs to `/usr/local/bin`, copies config to `/etc/promptshield`, installs the systemd unit, and enables it on boot.
+The production deployment is the combined gateway product from the repository
+root. Nginx is the only public listener; PromptShield, Bifrost, the detection
+engine, and dashboard services stay on the internal Compose network.
+
+## Configure
 
 ```bash
-sudo make install
-
-# Review and edit the config before starting:
-sudo nano /etc/promptshield/.env
-
-sudo systemctl start promptshield
-sudo systemctl status promptshield
-
-# Tail the audit log:
-journalctl -u promptshield -f
+cp .env.example .env
 ```
 
-## Uninstall
+Set production values for:
 
 ```bash
-sudo make uninstall
-# Removes the binary and service.
-# Config at /etc/promptshield is preserved.
+POSTGRES_PASSWORD=<database-password>
+BETTER_AUTH_SECRET=<32-plus-character-secret>
+PROMPTSHIELD_ENGINE_API_KEY=<engine-shared-secret>
+AUDIT_INGEST_SECRET=<audit-shared-secret>
+CONFIG_ADMIN_EMAILS=<real-admin-email>
 ```
 
-## Building from source
+Do not leave `CONFIG_ADMIN_EMAILS` unset if operators need policy or gateway
+security configuration changes from the dashboard. There is no default admin
+email.
+
+## Start
 
 ```bash
-make build   # produces bin/promptshield
-make run     # dev mode with go run
-make test    # go test -race ./...
-make tidy    # go mod tidy
+docker compose up -d --build
 ```
 
-**Requirements:** Go 1.22+
+Verify the public product gateway:
+
+```bash
+curl -s http://localhost/health
+```
+
+Public inference uses `http://localhost/v1`. Configure provider credentials,
+model routes, key pools, fallback, and router governance in Bifrost at
+`http://localhost/bifrost/` from an allowed admin origin.
+
+## Verify Before Changes
+
+```bash
+scripts/verify-production-topology.sh
+```
+
+The verifier checks public `/v1` routing through PromptShield, blocks direct
+Bifrost inference bypasses, confirms component services are internal-only, runs
+focused dashboard/API type checks, and proves a PromptShield policy-blocked
+request produces no Bifrost upstream hit.
