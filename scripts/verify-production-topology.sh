@@ -422,6 +422,11 @@ test_bifrost_promptshield_ui_uses_same_origin_api() {
     return
   fi
 
+  if ! grep -q 'window.location.href = `${getAppBasePath()}/login?goto=${encodeURIComponent(goto)}`' bifrost-src/ui/lib/store/apis/baseApi.ts; then
+    fail "test_bifrost_promptshield_ui_uses_same_origin_api: Bifrost API 401 redirects must preserve the /bifrost mount prefix"
+    return
+  fi
+
   if ! grep -q 'baseUrl: getApiBaseUrl()' bifrost-src/ui/lib/store/apis/baseApi.ts; then
     fail "test_bifrost_promptshield_ui_uses_same_origin_api: RTK base API must use getApiBaseUrl"
     return
@@ -447,12 +452,22 @@ test_promptshield_user_urls_reject_non_loopback_http() {
     return
   fi
 
+  if ! grep -Fq 'func (h *PromptShieldHandler) doPromptShieldRequest' bifrost-src/transports/bifrost-http/handlers/promptshield.go || ! grep -Fq 'return http.ErrUseLastResponse' bifrost-src/transports/bifrost-http/handlers/promptshield.go; then
+    fail "test_promptshield_user_urls_reject_non_loopback_http: PromptShield proxy requests must disable HTTP redirect following"
+    return
+  fi
+
+  if grep -q 'resp, err := h.client.Do(req)' bifrost-src/transports/bifrost-http/handlers/promptshield.go; then
+    fail "test_promptshield_user_urls_reject_non_loopback_http: PromptShield proxy paths must use doPromptShieldRequest, not h.client.Do directly"
+    return
+  fi
+
   if ! grep -q 'func promptShieldHostIsLoopback' bifrost-src/transports/bifrost-http/handlers/promptshield.go; then
     fail "test_promptshield_user_urls_reject_non_loopback_http: missing loopback helper for PromptShield URL validation"
     return
   fi
 
-  if ! grep -q 'http://10.0.0.5:8080' bifrost-src/transports/bifrost-http/handlers/promptshield_test.go || ! grep -q 'https://gateway.internal:8443' bifrost-src/transports/bifrost-http/handlers/promptshield_test.go; then
+  if ! grep -q 'http://10.0.0.5:8080' bifrost-src/transports/bifrost-http/handlers/promptshield_test.go || ! grep -q 'https://gateway.internal:8443' bifrost-src/transports/bifrost-http/handlers/promptshield_test.go || ! grep -q 'TestPromptShieldProxyRequestsDoNotFollowRedirects' bifrost-src/transports/bifrost-http/handlers/promptshield_test.go; then
     fail "test_promptshield_user_urls_reject_non_loopback_http: tests must cover rejected non-loopback HTTP and accepted HTTPS URL targets"
     return
   fi
