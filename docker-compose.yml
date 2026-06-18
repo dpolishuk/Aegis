@@ -231,6 +231,7 @@ services:
       dockerfile: transports/Dockerfile
       args:
         VERSION: ${AEGIS_BIFROST_VERSION:-1.5.15}
+        BIFROST_UI_BASE_PATH: ${BIFROST_UI_BASE_PATH:-/bifrost/}
     image: aegis-bifrost:${AEGIS_BIFROST_TAG:-v1.5.15}
     container_name: filter-bifrost
     restart: unless-stopped

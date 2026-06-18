@@ -234,6 +234,11 @@ test_bifrost_is_internal_and_pinned() {
     return
   fi
 
+  if ! grep -Eq '^[[:space:]]*BIFROST_UI_BASE_PATH:[[:space:]]*\$\{BIFROST_UI_BASE_PATH:-/bifrost/\}[[:space:]]*$' <<<"$active_block"; then
+    fail "test_bifrost_is_internal_and_pinned: Bifrost UI build must be mounted under /bifrost/"
+    return
+  fi
+
   if ! grep -Eq '^[[:space:]]*image:[[:space:]]*aegis-bifrost:\$\{AEGIS_BIFROST_TAG:-v[0-9][^}]*\}[[:space:]]*$' <<<"$active_block"; then
     fail "test_bifrost_is_internal_and_pinned: active Bifrost service must tag the local build as aegis-bifrost"
     return
@@ -387,8 +392,33 @@ test_bifrost_promptshield_ui_uses_same_origin_api() {
   promptshield_api_sources="$(cat bifrost-src/ui/lib/store/apis/baseApi.ts bifrost-src/ui/lib/store/apis/promptShieldApi.ts bifrost-src/ui/lib/utils/port.ts)"
   promptshield_ui_sources="$(find bifrost-src/ui/app/workspace/promptshield -type f -name '*.tsx' -print0 | xargs -0 cat)"
 
-  if ! grep -q 'return "/api";' bifrost-src/ui/lib/utils/port.ts; then
-    fail "test_bifrost_promptshield_ui_uses_same_origin_api: production API base URL must be same-origin /api"
+  if ! grep -q 'base: process.env.BIFROST_UI_BASE_PATH || "/"' bifrost-src/ui/vite.config.mts; then
+    fail "test_bifrost_promptshield_ui_uses_same_origin_api: Bifrost Vite build must use the configured UI base path"
+    return
+  fi
+
+  if ! grep -q '"process.env.BIFROST_UI_BASE_PATH"' bifrost-src/ui/vite.config.mts; then
+    fail "test_bifrost_promptshield_ui_uses_same_origin_api: Bifrost UI build must expose BIFROST_UI_BASE_PATH to runtime helpers"
+    return
+  fi
+
+  if ! grep -q 'ARG BIFROST_UI_BASE_PATH=/' bifrost-src/transports/Dockerfile || ! grep -q 'ENV BIFROST_UI_BASE_PATH=$BIFROST_UI_BASE_PATH' bifrost-src/transports/Dockerfile; then
+    fail "test_bifrost_promptshield_ui_uses_same_origin_api: Bifrost Dockerfile must pass the UI base path into the frontend build"
+    return
+  fi
+
+  if ! grep -q 'export function getAppBasePath()' bifrost-src/ui/lib/utils/port.ts; then
+    fail "test_bifrost_promptshield_ui_uses_same_origin_api: Bifrost UI must expose a runtime app base path helper"
+    return
+  fi
+
+  if ! grep -q 'return `${getAppBasePath()}/api`;' bifrost-src/ui/lib/utils/port.ts; then
+    fail "test_bifrost_promptshield_ui_uses_same_origin_api: production API base URL must preserve the /bifrost mount prefix"
+    return
+  fi
+
+  if ! grep -q 'basepath: getAppBasePath() || "/"' bifrost-src/ui/app/main.tsx; then
+    fail "test_bifrost_promptshield_ui_uses_same_origin_api: Bifrost router must use the /bifrost base path for production navigation"
     return
   fi
 
@@ -409,6 +439,25 @@ test_bifrost_promptshield_ui_uses_same_origin_api() {
   fi
 
   pass "test_bifrost_promptshield_ui_uses_same_origin_api"
+}
+
+test_promptshield_user_urls_reject_non_loopback_http() {
+  if ! grep -q 'parsed.Scheme == "http" && !promptShieldHostIsLoopback(parsed.Hostname())' bifrost-src/transports/bifrost-http/handlers/promptshield.go; then
+    fail "test_promptshield_user_urls_reject_non_loopback_http: user-submitted PromptShield URLs must reject non-loopback HTTP targets"
+    return
+  fi
+
+  if ! grep -q 'func promptShieldHostIsLoopback' bifrost-src/transports/bifrost-http/handlers/promptshield.go; then
+    fail "test_promptshield_user_urls_reject_non_loopback_http: missing loopback helper for PromptShield URL validation"
+    return
+  fi
+
+  if ! grep -q 'http://10.0.0.5:8080' bifrost-src/transports/bifrost-http/handlers/promptshield_test.go || ! grep -q 'https://gateway.internal:8443' bifrost-src/transports/bifrost-http/handlers/promptshield_test.go; then
+    fail "test_promptshield_user_urls_reject_non_loopback_http: tests must cover rejected non-loopback HTTP and accepted HTTPS URL targets"
+    return
+  fi
+
+  pass "test_promptshield_user_urls_reject_non_loopback_http"
 }
 
 test_promptshield_gateway_raw_key_is_one_time_only() {
@@ -807,6 +856,7 @@ test_bifrost_is_internal_and_pinned
 test_bifrost_promptshield_routes_are_auth_gated
 test_bifrost_promptshield_ui_surface_exists
 test_bifrost_promptshield_ui_uses_same_origin_api
+test_promptshield_user_urls_reject_non_loopback_http
 test_promptshield_gateway_raw_key_is_one_time_only
 test_promptshield_gateway_is_internal
 test_non_nginx_components_are_internal
