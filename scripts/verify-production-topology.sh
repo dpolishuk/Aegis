@@ -22,6 +22,22 @@ fail() {
   failures=$((failures + 1))
 }
 
+compose_service_block() {
+  local service="$1"
+  awk -v svc="$service" '
+    $0 ~ "^  " svc ":[[:space:]]*$" { in_block=1 }
+    in_block {
+      print
+      if (seen && $0 ~ /^  [A-Za-z0-9_-]+:[[:space:]]*$/) exit
+      seen=1
+    }
+  ' docker-compose.yml
+}
+
+strip_yaml_comments() {
+  sed -E 's/[[:space:]]+#.*$//; /^[[:space:]]*#/d'
+}
+
 test_public_v1_routes_to_promptshield_not_bifrost() {
   local block
   block="$(awk '
@@ -189,37 +205,246 @@ test_promptshield_upstream_points_to_bifrost_v1() {
 }
 
 test_bifrost_is_internal_and_pinned() {
-  local block
-  block="$(awk '
-    $0 ~ /^  bifrost:[[:space:]]*$/ { in_block=1 }
-    in_block {
-      print
-      if (seen && $0 ~ /^  [A-Za-z0-9_-]+:[[:space:]]*$/) exit
-      seen=1
-    }
-  ' docker-compose.yml)"
+  local block active_block
+  block="$(compose_service_block bifrost)"
+  active_block="$(strip_yaml_comments <<<"$block")"
 
-  if grep -q 'maximhq/bifrost:latest' <<<"$block"; then
+  if [[ -z "$block" ]]; then
+    fail "test_bifrost_is_internal_and_pinned: docker-compose.yml has no bifrost service"
+    return
+  fi
+
+  if grep -Eq '^[[:space:]]*image:[[:space:]]*maximhq/bifrost(:latest)?([[:space:]]|$)' <<<"$active_block"; then
     fail "test_bifrost_is_internal_and_pinned: Bifrost production image must not use latest"
     return
   fi
 
-  if ! grep -q 'image: maximhq/bifrost@sha256:' <<<"$block"; then
-    fail "test_bifrost_is_internal_and_pinned: Bifrost image must be pinned by digest"
+  if grep -Eq '^[[:space:]]*image:[[:space:]]*maximhq/bifrost@sha256:' <<<"$active_block"; then
+    fail "test_bifrost_is_internal_and_pinned: active Bifrost service must use the project-owned aegis-bifrost image, not the rollback digest image"
     return
   fi
 
-  if grep -Eq '^[[:space:]]*ports:' <<<"$block"; then
+  if ! grep -Eq '^[[:space:]]*build:[[:space:]]*$' <<<"$active_block" || ! grep -Eq '^[[:space:]]*context:[[:space:]]*\./bifrost-src[[:space:]]*$' <<<"$active_block"; then
+    fail "test_bifrost_is_internal_and_pinned: active Bifrost service must build from project-owned ./bifrost-src"
+    return
+  fi
+
+  if ! grep -Eq '^[[:space:]]*dockerfile:[[:space:]]*transports/Dockerfile[[:space:]]*$' <<<"$active_block"; then
+    fail "test_bifrost_is_internal_and_pinned: active Bifrost service must build transports/Dockerfile"
+    return
+  fi
+
+  if ! grep -Eq '^[[:space:]]*image:[[:space:]]*aegis-bifrost:\$\{AEGIS_BIFROST_TAG:-v[0-9][^}]*\}[[:space:]]*$' <<<"$active_block"; then
+    fail "test_bifrost_is_internal_and_pinned: active Bifrost service must tag the local build as aegis-bifrost"
+    return
+  fi
+
+  if ! grep -Eq 'Rollback path:' <<<"$block" || ! grep -Eq '^[[:space:]]*#[[:space:]]*image:[[:space:]]*maximhq/bifrost@sha256:' <<<"$block"; then
+    fail "test_bifrost_is_internal_and_pinned: Bifrost service must document the digest rollback path"
+    return
+  fi
+
+  if ! grep -Eq 'Rollback path:.*remove build:' <<<"$block"; then
+    fail "test_bifrost_is_internal_and_pinned: Bifrost rollback comment must explain removing build: before restoring digest image"
+    return
+  fi
+
+  if grep -Eq '^[[:space:]]*ports:' <<<"$active_block"; then
     fail "test_bifrost_is_internal_and_pinned: Bifrost must not publish a host port in production compose"
     return
   fi
 
-  if ! grep -Eq '^[[:space:]]*expose:' <<<"$block"; then
+  if ! grep -Eq '^[[:space:]]*expose:' <<<"$active_block" || ! grep -Eq '^[[:space:]]*-[[:space:]]*"?8081"?[[:space:]]*$' <<<"$active_block"; then
     fail "test_bifrost_is_internal_and_pinned: Bifrost should expose 8081 only on the Compose network"
     return
   fi
 
+  if ! grep -Eq '^[[:space:]]*networks:' <<<"$active_block" || ! grep -Eq '^[[:space:]]*-[[:space:]]*filter[[:space:]]*$' <<<"$active_block"; then
+    fail "test_bifrost_is_internal_and_pinned: Bifrost must attach only to the internal filter Compose network"
+    return
+  fi
+
   pass "test_bifrost_is_internal_and_pinned"
+}
+
+test_bifrost_promptshield_routes_are_auth_gated() {
+  local handler_source server_source middleware_source register_block
+  handler_source="$(cat bifrost-src/transports/bifrost-http/handlers/promptshield.go)"
+  server_source="$(cat bifrost-src/transports/bifrost-http/server/server.go)"
+  middleware_source="$(cat bifrost-src/transports/bifrost-http/handlers/middlewares.go)"
+  register_block="$(awk '
+    /^func \(h \*PromptShieldHandler\) RegisterRoutes/ { in_block=1; depth=0 }
+    in_block {
+      print
+      opens=gsub(/\{/, "{")
+      closes=gsub(/\}/, "}")
+      depth += opens - closes
+      if (depth <= 0 && NR > 1) exit
+    }
+  ' bifrost-src/transports/bifrost-http/handlers/promptshield.go)"
+
+  if [[ -z "$register_block" ]]; then
+    fail "test_bifrost_promptshield_routes_are_auth_gated: missing PromptShieldHandler.RegisterRoutes"
+    return
+  fi
+
+  if ! grep -Eq '"/api/promptshield/[^"]*".*lib\.ChainMiddlewares\([^,]+,[[:space:]]*middlewares\.\.\.\)' <<<"$register_block"; then
+    fail "test_bifrost_promptshield_routes_are_auth_gated: /api/promptshield routes must be registered through supplied middleware"
+    return
+  fi
+
+  if grep -Eq '"/api/promptshield/[^"]*"[^\n]*h\.[A-Za-z0-9_]+[[:space:]]*\)' <<<"$register_block" && ! grep -Eq '"/api/promptshield/[^"]*".*lib\.ChainMiddlewares' <<<"$register_block"; then
+    fail "test_bifrost_promptshield_routes_are_auth_gated: PromptShield routes must not bypass middleware"
+    return
+  fi
+
+  if ! grep -q 'promptShieldHandler := handlers.NewPromptShieldHandler()' <<<"$server_source" || ! grep -q 'promptShieldHandler.RegisterRoutes(s.Router, middlewares...)' <<<"$server_source"; then
+    fail "test_bifrost_promptshield_routes_are_auth_gated: Bifrost server must register PromptShield routes on the API route path with middlewares"
+    return
+  fi
+
+  if ! grep -q 'apiMiddlewares = append(apiMiddlewares, s.AuthMiddleware.APIMiddleware())' <<<"$server_source"; then
+    fail "test_bifrost_promptshield_routes_are_auth_gated: API route middleware chain must include dashboard auth middleware"
+    return
+  fi
+
+  if ! grep -q 's.RegisterAPIRoutes(s.Ctx, s, apiMiddlewares...)' <<<"$server_source"; then
+    fail "test_bifrost_promptshield_routes_are_auth_gated: API middlewares must be passed into RegisterAPIRoutes"
+    return
+  fi
+
+  if ! grep -q 'ctx.SetUserValue(schemas.IsLocalAdminContextKey, true)' <<<"$middleware_source"; then
+    fail "test_bifrost_promptshield_routes_are_auth_gated: dashboard auth middleware must mark authenticated admin sessions"
+    return
+  fi
+
+  if ! grep -Eq 'setPromptShieldNoStore\(ctx\)' <<<"$handler_source"; then
+    fail "test_bifrost_promptshield_routes_are_auth_gated: PromptShield admin responses must keep no-store handling"
+    return
+  fi
+
+  pass "test_bifrost_promptshield_routes_are_auth_gated"
+}
+
+test_bifrost_promptshield_ui_surface_exists() {
+  local page route_file sidebar_source route_name route_path
+  sidebar_source="$(cat bifrost-src/ui/components/sidebar.tsx)"
+
+  if ! grep -q 'title: "PromptShield"' <<<"$sidebar_source" || ! grep -q 'url: "/workspace/promptshield"' <<<"$sidebar_source"; then
+    fail "test_bifrost_promptshield_ui_surface_exists: sidebar must expose the PromptShield section"
+    return
+  fi
+
+  for page in overview policy audit keys gateway engine settings; do
+    route_path="/workspace/promptshield/$page"
+    route_file="bifrost-src/ui/app/workspace/promptshield/$page/layout.tsx"
+    route_name="$(tr '[:lower:]' '[:upper:]' <<<"${page:0:1}")${page:1}"
+
+    if [[ ! -f "$route_file" ]]; then
+      fail "test_bifrost_promptshield_ui_surface_exists: missing PromptShield $page route file"
+      return
+    fi
+
+    if ! grep -q "createFileRoute(\"$route_path\")" "$route_file"; then
+      fail "test_bifrost_promptshield_ui_surface_exists: PromptShield $page route must register $route_path"
+      return
+    fi
+
+    if ! grep -q "PromptShield${route_name}Page" "$route_file"; then
+      fail "test_bifrost_promptshield_ui_surface_exists: PromptShield $page route must render the matching page component"
+      return
+    fi
+
+    if ! grep -q "url: \"$route_path\"" <<<"$sidebar_source"; then
+      fail "test_bifrost_promptshield_ui_surface_exists: sidebar must link to $route_path"
+      return
+    fi
+  done
+
+  if ! grep -q 'throw redirect({ to: "/workspace/promptshield/overview"' bifrost-src/ui/app/workspace/promptshield/layout.tsx; then
+    fail "test_bifrost_promptshield_ui_surface_exists: base PromptShield route must redirect to overview"
+    return
+  fi
+
+  pass "test_bifrost_promptshield_ui_surface_exists"
+}
+
+test_bifrost_promptshield_ui_uses_same_origin_api() {
+  local promptshield_api_sources promptshield_ui_sources forbidden forbidden_pattern
+  forbidden_pattern='dashboard:3000|promptshield-gateway|promptshield-engine|/trpc|/internal|/bifrost/v1'
+  promptshield_api_sources="$(cat bifrost-src/ui/lib/store/apis/baseApi.ts bifrost-src/ui/lib/store/apis/promptShieldApi.ts bifrost-src/ui/lib/utils/port.ts)"
+  promptshield_ui_sources="$(find bifrost-src/ui/app/workspace/promptshield -type f -name '*.tsx' -print0 | xargs -0 cat)"
+
+  if ! grep -q 'return "/api";' bifrost-src/ui/lib/utils/port.ts; then
+    fail "test_bifrost_promptshield_ui_uses_same_origin_api: production API base URL must be same-origin /api"
+    return
+  fi
+
+  if ! grep -q 'baseUrl: getApiBaseUrl()' bifrost-src/ui/lib/store/apis/baseApi.ts; then
+    fail "test_bifrost_promptshield_ui_uses_same_origin_api: RTK base API must use getApiBaseUrl"
+    return
+  fi
+
+  if ! grep -Eq 'url:[[:space:]]*"/promptshield/|query:[[:space:]]*\(\)[[:space:]]*=>[[:space:]]*"/promptshield/' bifrost-src/ui/lib/store/apis/promptShieldApi.ts; then
+    fail "test_bifrost_promptshield_ui_uses_same_origin_api: PromptShield UI API must call same-origin /api/promptshield/* via the base API"
+    return
+  fi
+
+  if grep -Eq "$forbidden_pattern" <<<"$promptshield_api_sources$promptshield_ui_sources"; then
+    forbidden="$(grep -ERn "$forbidden_pattern" bifrost-src/ui/lib/store/apis/baseApi.ts bifrost-src/ui/lib/store/apis/promptShieldApi.ts bifrost-src/ui/lib/utils/port.ts bifrost-src/ui/app/workspace/promptshield || true)"
+    fail "test_bifrost_promptshield_ui_uses_same_origin_api: integrated PromptShield UI/API contains forbidden browser-facing backend calls: ${forbidden//$'\n'/; }"
+    return
+  fi
+
+  pass "test_bifrost_promptshield_ui_uses_same_origin_api"
+}
+
+test_promptshield_gateway_raw_key_is_one_time_only() {
+  local promptshield_ui_sources handler_source post_gateway_key_block
+  promptshield_ui_sources="$(cat bifrost-src/ui/lib/store/apis/promptShieldApi.ts; find bifrost-src/ui/app/workspace/promptshield -type f -name '*.tsx' -print0 | xargs -0 cat)"
+  handler_source="$(cat bifrost-src/transports/bifrost-http/handlers/promptshield.go)"
+  post_gateway_key_block="$(awk '
+    /func \(h \*PromptShieldHandler\) postGatewayKey/ { in_block=1; depth=0 }
+    in_block {
+      print
+      opens=gsub(/\{/, "{")
+      closes=gsub(/\}/, "}")
+      depth += opens - closes
+      if (depth <= 0 && NR > 1) exit
+    }
+  ' bifrost-src/transports/bifrost-http/handlers/promptshield.go)"
+
+  if ! grep -q 'rawKey: string' bifrost-src/ui/lib/store/apis/promptShieldApi.ts; then
+    fail "test_promptshield_gateway_raw_key_is_one_time_only: create response type must include rawKey"
+    return
+  fi
+
+  if ! grep -q 'useState<{ key: PromptShieldGatewayKey; rawKey: string } | null>(null)' bifrost-src/ui/app/workspace/promptshield/views/promptShieldViews.tsx; then
+    fail "test_promptshield_gateway_raw_key_is_one_time_only: UI must keep rawKey only in transient component state"
+    return
+  fi
+
+  if ! grep -q 'setCreatedSecret(created)' bifrost-src/ui/app/workspace/promptshield/views/promptShieldViews.tsx || ! grep -q 'setCreatedSecret(null)' bifrost-src/ui/app/workspace/promptshield/views/promptShieldViews.tsx; then
+    fail "test_promptshield_gateway_raw_key_is_one_time_only: UI must clear the one-time rawKey from state"
+    return
+  fi
+
+  if grep -Eq 'rawKey[^;\n]*(localStorage|sessionStorage)|(localStorage|sessionStorage)[^;\n]*rawKey' <<<"$promptshield_ui_sources"; then
+    fail "test_promptshield_gateway_raw_key_is_one_time_only: rawKey must not be persisted to localStorage or sessionStorage"
+    return
+  fi
+
+  if [[ -z "$post_gateway_key_block" ]] || ! grep -q 'setPromptShieldNoStore(ctx)' <<<"$post_gateway_key_block"; then
+    fail "test_promptshield_gateway_raw_key_is_one_time_only: gateway key create response must be no-store"
+    return
+  fi
+
+  if ! grep -q 'return promptShieldGatewayKeyCreateResponse{Key: summary, RawKey: rawKey}, true' <<<"$handler_source"; then
+    fail "test_promptshield_gateway_raw_key_is_one_time_only: server must return rawKey only from normalized create response"
+    return
+  fi
+
+  pass "test_promptshield_gateway_raw_key_is_one_time_only"
 }
 
 test_promptshield_gateway_is_internal() {
@@ -566,6 +791,10 @@ test_bifrost_admin_proxy_blocks_inference_subpath
 test_bifrost_admin_proxy_has_access_control
 test_promptshield_upstream_points_to_bifrost_v1
 test_bifrost_is_internal_and_pinned
+test_bifrost_promptshield_routes_are_auth_gated
+test_bifrost_promptshield_ui_surface_exists
+test_bifrost_promptshield_ui_uses_same_origin_api
+test_promptshield_gateway_raw_key_is_one_time_only
 test_promptshield_gateway_is_internal
 test_non_nginx_components_are_internal
 test_docs_do_not_document_public_bifrost_inference
