@@ -82,20 +82,19 @@ docker compose -f docker-compose.dev.yml up --build
 
 | Service | URL |
 |---|---|
-| Dashboard | http://localhost:8000 |
-| API server | http://localhost:3000 |
-| Gateway | http://localhost:8080 |
+| Product gateway | http://localhost |
+| Dashboard | http://localhost |
 | Engine | http://localhost:4321 |
 | Docs | http://localhost:4000 |
 
-Point your app at `http://localhost:8080/v1`. The API is OpenAI-compatible.
+Point your app at `http://localhost/v1`. The API is OpenAI-compatible.
 
 ```bash
 # verify the gateway is up
-curl http://localhost:8080/health
+curl http://localhost/health
 
 # send a prompt with PII; behavior depends on policy (block or mask)
-curl -s -X POST http://localhost:8080/v1/chat/completions \
+curl -s -X POST http://localhost/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4o",

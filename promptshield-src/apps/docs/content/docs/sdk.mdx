@@ -1,9 +1,11 @@
 ---
 title: SDK Integration
-description: Point your existing OpenAI SDK at the gateway. One line change.
+description: Point your existing OpenAI SDK at the production gateway. One line change.
 ---
 
-PromptShield accepts the same request format as OpenAI's `/v1/chat/completions`. Point your SDK's `base_url` at the gateway. Nothing else changes.
+The combined gateway accepts the same request format as OpenAI's `/v1/chat/completions`.
+Point your SDK's `base_url` at the public Nginx `/v1` endpoint so traffic
+passes through PromptShield before Bifrost. Nothing else changes.
 
 ## Python
 
@@ -11,8 +13,8 @@ PromptShield accepts the same request format as OpenAI's `/v1/chat/completions`.
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8080/v1",
-    api_key="your-api-key",  # forwarded to the upstream provider
+    base_url="http://localhost/v1",
+    api_key="local",
 )
 
 response = client.chat.completions.create(
@@ -35,24 +37,17 @@ with client.chat.completions.stream(
 
 ## The model field
 
-The `model` field in the request body is passed through to the upstream. It overrides the server-side default (`PROMPTSHIELD_MODEL`, `PROMPTSHIELD_GEMINI_MODEL`, etc.) for that request. In multi-provider mode it also controls which backend handles the request: `claude-*` goes to Anthropic, `gpt-*` to OpenAI, `gemini-*` to Gemini.
+The `model` field in the request body is passed through to Bifrost. Model
+selection, provider fallback, and provider routing are configured in Bifrost.
 
-## Passing API keys at request time
+## Provider API keys
 
-Instead of storing keys in `.env` on the gateway server, pass them per-request via headers. The gateway checks these before falling back to environment variables:
-
-| Header                        | Used for     |
-| ----------------------------- | ------------ |
-| `x-llm-api-key`               | Any provider |
-| `x-gemini-api-key`            | Gemini only  |
-| `x-openai-api-key`            | OpenAI only  |
-| `Authorization: Bearer <key>` | Any provider |
+Provider API keys belong to Bifrost in the combined product. Do not send
+provider keys to PromptShield or store them in PromptShield environment files.
 
 ```python
 client = OpenAI(
-    base_url="http://localhost:8080/v1",
-    api_key="user-supplied-key",  # sent as Authorization: Bearer
+    base_url="http://localhost/v1",
+    api_key="local",
 )
 ```
-
-Useful for multi-tenant apps where each user supplies their own key.

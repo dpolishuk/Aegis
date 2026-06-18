@@ -66,10 +66,10 @@ curl -s http://localhost:8080/health
 
 ## Connect your app
 
-Change `base_url` in your SDK. No other code changes needed.
+Change `base_url` in your SDK to the production Nginx `/v1` endpoint. No other code changes needed.
 
 ```python
-client = OpenAI(base_url="http://localhost:8080/v1", api_key="sk-...")
+client = OpenAI(base_url="http://localhost/v1", api_key="local")
 ```
 
 ## Modes

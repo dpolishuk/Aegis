@@ -24,48 +24,6 @@ type Provider =
   | "openai-compatible"
   | "selfhosted";
 
-const PROVIDERS: {
-  id: Provider;
-  label: string;
-  defaultModel: string;
-  keyVar: string;
-}[] = [
-  {
-    id: "gemini",
-    label: "Google Gemini",
-    defaultModel: "gemini-2.0-flash",
-    keyVar: "GEMINI_API_KEY",
-  },
-  {
-    id: "openai",
-    label: "OpenAI",
-    defaultModel: "gpt-4o-mini",
-    keyVar: "OPENAI_API_KEY",
-  },
-  {
-    id: "anthropic",
-    label: "Anthropic",
-    defaultModel: "claude-3-5-sonnet-20241022",
-    keyVar: "ANTHROPIC_API_KEY",
-  },
-  {
-    id: "selfhosted",
-    label: "Self-hosted / Ollama",
-    defaultModel: "",
-    keyVar: "SELFHOSTED_API_KEY",
-  },
-  {
-    id: "openai-compatible",
-    label: "OpenAI-compatible",
-    defaultModel: "",
-    keyVar: "",
-  },
-];
-
-function isProvider(value: string): value is Provider {
-  return PROVIDERS.some((provider) => provider.id === value);
-}
-
 /* Helpers */
 function Sk({ className = "" }: { className?: string }) {
   return (
@@ -235,11 +193,6 @@ function GatewayPage() {
   const [provider, setProvider] = useState<Provider>("gemini");
   const [upstreamUrl, setUpstreamUrl] = useState("");
   const [model, setModel] = useState("");
-  const [providers, setProviders] = useState<Provider[]>(["gemini"]);
-  const [providerUrls, setProviderUrls] = useState<Record<string, string>>({});
-  const [modelRoutes, setModelRoutes] = useState<
-    { model: string; provider: Provider }[]
-  >([]);
   const [port, setPort] = useState("8080");
   const [chatRoute, setChatRoute] = useState("/v1/chat/completions");
   const [policyPath, setPolicyPath] = useState("config/policy.yaml");
@@ -255,14 +208,6 @@ function GatewayPage() {
     setProvider(d.provider as Provider);
     setUpstreamUrl(d.upstreamUrl);
     setModel(d.models?.global ?? "");
-    setProviders(d.providers as Provider[]);
-    setProviderUrls(d.providerUrls ?? {});
-    setModelRoutes(
-      (d.modelRoutes ?? []).filter(
-        (route): route is { model: string; provider: Provider } =>
-          isProvider(route.provider),
-      ),
-    );
     setPort(d.port);
     setChatRoute(d.chatRoute);
     setPolicyPath(d.policyPath);
@@ -280,8 +225,8 @@ function GatewayPage() {
       providerMode,
       provider,
       upstreamUrl,
-      providers,
-      providerUrls,
+      providers: [],
+      providerUrls: {},
       models: {
         global: model,
         gemini: "",
@@ -289,7 +234,7 @@ function GatewayPage() {
         anthropic: "",
         selfhosted: "",
       },
-      modelRoutes,
+      modelRoutes: [],
       port,
       chatRoute,
       policyPath,
@@ -303,13 +248,6 @@ function GatewayPage() {
     gatewayHealth.isFetching || engineHealth.isFetching || gatewayConfig.isFetching;
   const loading = gatewayConfig.status === "pending";
   const isGatewayApiConfig = configSourceInfo.data?.source === "gateway_api";
-
-  const keyCounts = gatewayConfig.data?.keyCounts ?? {
-    upstream: 0,
-    gemini: 0,
-    openai: 0,
-    anthropic: 0,
-  };
 
   return (
     <div className="flex min-h-full flex-col">
@@ -436,84 +374,44 @@ function GatewayPage() {
 
         {/* Overview section */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {/* Active providers */}
           <div className="rounded-lg border border-border bg-card px-4 py-3.5">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-              Active Providers
+              Public Inference
             </p>
             {loading ? (
               <Sk className="mt-2 h-5 w-full" />
             ) : (
-              <div className="mt-2.5 flex flex-wrap gap-1.5">
-                {providers.length > 0 ? (
-                  providers.map((p) => {
-                    const label = PROVIDERS.find((x) => x.id === p)?.label ?? p;
-                    return (
-                      <span
-                        key={p}
-                        className="inline-flex items-center rounded-full border border-primary/25 bg-primary/10 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-primary"
-                      >
-                        {label}
-                      </span>
-                    );
-                  })
-                ) : (
-                  <span className="text-[11px] text-muted-foreground/40">
-                    None configured
-                  </span>
-                )}
-              </div>
+              <p className="mt-2.5 font-mono text-[11px] text-muted-foreground break-all">
+                /v1/*
+              </p>
             )}
           </div>
 
-          {/* API keys status */}
           <div className="rounded-lg border border-border bg-card px-4 py-3.5">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-              API Keys Configured
+              Provider Control
             </p>
             {loading ? (
               <Sk className="mt-2 h-5 w-full" />
             ) : (
-              <div className="mt-2.5 space-y-1">
-                {Object.entries(keyCounts).map(([provider, count]) => (
-                  <div
-                    key={provider}
-                    className="flex items-center justify-between text-[11px]"
-                  >
-                    <span className="text-muted-foreground capitalize">
-                      {provider === "upstream"
-                        ? "Global"
-                        : PROVIDERS.find((x) => x.id === provider)?.label ??
-                          provider}
-                    </span>
-                    <span
-                      className={`font-semibold tabular-nums ${
-                        count > 0
-                          ? "text-success"
-                          : "text-muted-foreground/40"
-                      }`}
-                    >
-                      {count}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <p className="mt-2.5 text-[11px] leading-relaxed text-muted-foreground">
+                Bifrost owns provider keys, key pools, fallback, and model routes.
+              </p>
             )}
           </div>
 
-          {/* Route URLs */}
           <div className="rounded-lg border border-border bg-card px-4 py-3.5">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-              Route Info
+              PromptShield Role
             </p>
             {loading ? (
               <Sk className="mt-2 h-5 w-full" />
             ) : (
               <div className="mt-2.5 space-y-2 text-[10px]">
                 <div>
-                  <p className="text-muted-foreground/60">Chat Endpoint</p>
+                  <p className="text-muted-foreground/60">Internal route</p>
                   <p className="font-mono text-muted-foreground break-all">
-                    {`http://localhost:${port}${chatRoute}`}
+                    {`:${port}${chatRoute} -> Bifrost /v1`}
                   </p>
                 </div>
                 {mode === "security" && (

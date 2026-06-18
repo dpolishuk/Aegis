@@ -50,8 +50,8 @@ services:
       PROMPTSHIELD_MODEL_ROUTES: ${PROMPTSHIELD_MODEL_ROUTES:-}
     volumes:
       - ./policy.yaml:/policy/policy.yaml:ro
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
       interval: 15s

@@ -399,13 +399,6 @@ function updateEnvFile(
   return [...updated, ...appended].join("\n");
 }
 
-function splitKeys(val: string | undefined): string[] {
-  return (val ?? "")
-    .split(",")
-    .map((k) => k.trim())
-    .filter(Boolean);
-}
-
 /* Router */
 
 export const gatewayRouter = router({
@@ -585,45 +578,31 @@ export const gatewayRouter = router({
     const e = parseEnvFile(content);
 
     const engineUrl = e.PROMPTSHIELD_ENGINE_URL ?? "none";
-    const multiProviders = splitKeys(e.PROMPTSHIELD_PROVIDERS);
 
     return {
       mode: engineUrl === "none" ? "gateway" : "security",
       engineUrl: engineUrl === "none" ? "" : engineUrl,
-      provider: (e.PROMPTSHIELD_PROVIDER ?? "gemini") as string,
-      upstreamUrl: e.PROMPTSHIELD_UPSTREAM_URL ?? "",
-      providerMode: (multiProviders.length > 0 ? "multi" : "single") as
-        | "single"
-        | "multi",
-      providers: multiProviders,
+      provider: "openai-compatible",
+      upstreamUrl: "",
+      providerMode: "single" as const,
+      providers: [],
       providerUrls: {
-        gemini: e.PROMPTSHIELD_GEMINI_UPSTREAM_URL ?? "",
-        openai: e.PROMPTSHIELD_OPENAI_UPSTREAM_URL ?? "",
-        anthropic: e.PROMPTSHIELD_ANTHROPIC_UPSTREAM_URL ?? "",
-        selfhosted: e.PROMPTSHIELD_SELFHOSTED_UPSTREAM_URL ?? "",
         "openai-compatible":
           e.PROMPTSHIELD_OPENAI_COMPATIBLE_UPSTREAM_URL ?? "",
       },
       models: {
-        global: e.PROMPTSHIELD_MODEL ?? "",
-        gemini: e.PROMPTSHIELD_GEMINI_MODEL ?? "",
-        openai: e.PROMPTSHIELD_OPENAI_MODEL ?? "",
-        anthropic: e.PROMPTSHIELD_ANTHROPIC_MODEL ?? "",
-        selfhosted: e.PROMPTSHIELD_SELFHOSTED_MODEL ?? "",
+        global: "",
+        gemini: "",
+        openai: "",
+        anthropic: "",
+        selfhosted: "",
       },
-      modelRoutes: (e.PROMPTSHIELD_MODEL_ROUTES ?? "")
-        .split(",")
-        .map((r) => {
-          const [m, p] = r.split("=");
-          return m && p ? { model: m.trim(), provider: p.trim() } : null;
-        })
-        .filter(Boolean) as { model: string; provider: string }[],
-      // Return counts only — never expose raw key values
+      modelRoutes: [],
       keyCounts: {
-        upstream: splitKeys(e.PROMPTSHIELD_UPSTREAM_API_KEY).length,
-        gemini: splitKeys(e.GEMINI_API_KEY).length,
-        openai: splitKeys(e.OPENAI_API_KEY).length,
-        anthropic: splitKeys(e.ANTHROPIC_API_KEY).length,
+        upstream: 0,
+        gemini: 0,
+        openai: 0,
+        anthropic: 0,
       },
       port: e.PROMPTSHIELD_PORT ?? "8080",
       chatRoute: e.PROMPTSHIELD_CHAT_ROUTE ?? "/v1/chat/completions",

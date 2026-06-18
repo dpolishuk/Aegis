@@ -204,6 +204,30 @@ test_bifrost_is_internal_and_pinned() {
   pass "test_bifrost_is_internal_and_pinned"
 }
 
+test_promptshield_gateway_is_internal() {
+  local block
+  block="$(awk '
+    $0 ~ /^  promptshield-gateway:[[:space:]]*$/ { in_block=1 }
+    in_block {
+      print
+      if (seen && $0 ~ /^  [A-Za-z0-9_-]+:[[:space:]]*$/) exit
+      seen=1
+    }
+  ' docker-compose.yml)"
+
+  if grep -Eq '^[[:space:]]*ports:' <<<"$block"; then
+    fail "test_promptshield_gateway_is_internal: PromptShield gateway must not publish a host port in production compose"
+    return
+  fi
+
+  if ! grep -Eq '^[[:space:]]*expose:' <<<"$block"; then
+    fail "test_promptshield_gateway_is_internal: PromptShield gateway should expose 8080 only on the Compose network"
+    return
+  fi
+
+  pass "test_promptshield_gateway_is_internal"
+}
+
 test_docs_do_not_document_public_bifrost_inference() {
   local docs
   docs="$(cat README.md .env.example promptshield-src/README.md promptshield-src/apps/docs/content/docs/*.mdx)"
@@ -230,6 +254,11 @@ test_docs_do_not_document_public_bifrost_inference() {
 
   if grep -ERn 'PROMPTSHIELD_PROVIDER=(gemini|openai|anthropic|selfhosted)([^-[:alnum:]_]|$)' promptshield-src/README.md promptshield-src/apps/docs/content/docs >/dev/null; then
     fail "test_docs_do_not_document_public_bifrost_inference: product docs must preserve Bifrost as provider control plane"
+    return
+  fi
+
+  if grep -ERn 'localhost:8080/v1|:8080/v1|base_url="[^"]*8080/v1|baseUrl": "[^"]*8080/v1' promptshield-src/README.md promptshield-src/apps/docs/content/docs promptshield-src/apps/web/src/routes/_layout.dashboard.tsx >/dev/null; then
+    fail "test_docs_do_not_document_public_bifrost_inference: product docs/UI must show public inference through Nginx /v1, not direct component gateway :8080/v1"
     return
   fi
 
@@ -337,12 +366,12 @@ test_legacy_promptshield_provider_route_not_primary_nav() {
     return
   fi
 
-  if grep -Eq 'trpc\.gateway\.(addApiKey|clearApiKeys)|<KeyRow|Add route|Custom model routes|Upstream API Keys' promptshield-src/apps/web/src/routes/_layout.gateway.tsx; then
+  if grep -Eq 'trpc\.gateway\.(addApiKey|clearApiKeys)|<KeyRow|Add route|Custom model routes|Upstream API Keys|Active Providers|API Keys Configured' promptshield-src/apps/web/src/routes/_layout.gateway.tsx; then
     fail "test_legacy_promptshield_provider_route_not_primary_nav: legacy /gateway route must not expose PromptShield provider/model/key editing controls"
     return
   fi
 
-  if grep -Eq 'addApiKey|clearApiKeys' promptshield-src/packages/api/src/routers/gateway.ts; then
+  if grep -Eq 'addApiKey|clearApiKeys|splitKeys\(e\.PROMPTSHIELD_UPSTREAM_API_KEY\)|splitKeys\(e\.GEMINI_API_KEY\)|splitKeys\(e\.OPENAI_API_KEY\)|splitKeys\(e\.ANTHROPIC_API_KEY\)' promptshield-src/packages/api/src/routers/gateway.ts; then
     fail "test_legacy_promptshield_provider_route_not_primary_nav: gateway API must not expose competing provider key mutations"
     return
   fi
@@ -387,6 +416,11 @@ test_blocked_request_smoke_test_exists() {
     return
   fi
 
+  if ! bash "$script"; then
+    fail "test_blocked_request_smoke_test_exists: blocked-request smoke test failed"
+    return
+  fi
+
   pass "test_blocked_request_smoke_test_exists"
 }
 
@@ -395,6 +429,7 @@ test_bifrost_admin_proxy_blocks_inference_subpath
 test_bifrost_admin_proxy_has_access_control
 test_promptshield_upstream_points_to_bifrost_v1
 test_bifrost_is_internal_and_pinned
+test_promptshield_gateway_is_internal
 test_docs_do_not_document_public_bifrost_inference
 test_secret_bearing_bifrost_runtime_state_is_flagged
 test_dashboard_has_bifrost_router_status

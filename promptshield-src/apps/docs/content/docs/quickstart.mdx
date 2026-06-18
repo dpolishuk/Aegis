@@ -107,10 +107,10 @@ Use the same engine key value for `PROMPTSHIELD_API_KEY` (engine), `PROMPTSHIELD
 
 ## 5. Send a request
 
-Point your app at `http://localhost:8080/v1`. The API is OpenAI-compatible, so existing client code usually does not need changes.
+Point your app at `http://localhost/v1`. The API is OpenAI-compatible, so existing client code usually does not need changes.
 
 ```bash
-curl -s -X POST http://localhost:8080/v1/chat/completions \
+curl -s -X POST http://localhost/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model": "gemini-2.0-flash", "messages": [{"role": "user", "content": "Say hello"}]}'
 ```
@@ -120,7 +120,7 @@ curl -s -X POST http://localhost:8080/v1/chat/completions \
 Send a prompt containing a leaked API key:
 
 ```bash
-curl -s -X POST http://localhost:8080/v1/chat/completions \
+curl -s -X POST http://localhost/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemini-2.0-flash",

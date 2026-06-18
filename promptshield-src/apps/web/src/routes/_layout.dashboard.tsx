@@ -472,7 +472,7 @@ function DashboardPage() {
                 </p>
                 <pre className="mono overflow-x-auto rounded border border-[var(--dev-border)] bg-[var(--dev-panel-hi)] p-3 text-[11px] leading-relaxed text-[var(--dev-text)]">
                   <span style={{ color: "var(--dev-accent)" }}>$</span>{" "}
-                  {`curl http://localhost:8080/v1/chat/completions \\
+                  {`curl http://localhost/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "gpt-4o-mini",
